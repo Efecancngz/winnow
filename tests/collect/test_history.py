@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from winnow.collect.history import CollectionResult, collect_history
-from winnow.collect.runner import InstallResult, RunResult
+from winnow.collect.runner import InstallResult, RunnerError, RunResult
 from winnow.ingest.models import CoverageReport, FileCoverage, TestOutcome
 from winnow.store.repository import CommitRepository, CoverageRepository, TestOutcomeRepository
 from winnow.store.schema import init_db
@@ -38,6 +38,102 @@ def _write_fixture_reports(output_dir: Path) -> None:
 </testsuites>
 """
     )
+
+
+def _write_fixture_reports_with_failure(output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "cobertura-coverage.xml").write_text(
+        """<?xml version="1.0"?>
+<coverage>
+  <packages>
+    <package name="app">
+      <classes>
+        <class name="a" filename="src/a.ts">
+          <lines><line number="1" hits="1"/></lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>
+"""
+    )
+    (output_dir / "junit.xml").write_text(
+        """<?xml version="1.0"?>
+<testsuites>
+  <testsuite name="jest">
+    <testcase classname="a.test" name="works" time="0.01"/>
+    <testcase classname="a.test" name="broken" time="0.02">
+      <failure message="AssertionError">Traceback...</failure>
+    </testcase>
+  </testsuite>
+</testsuites>
+"""
+    )
+
+
+def test_collect_history_skips_commit_when_list_test_files_raises(tmp_path: Path):
+    commit_repo, coverage_repo, outcome_repo = _repos(tmp_path)
+
+    def fake_list_test_files(repo_path):
+        raise RunnerError("jest --listTests failed: config error")
+
+    result = collect_history(
+        repo_url="https://example.invalid/repo.git",
+        clone_dest=tmp_path / "repo",
+        output_root=tmp_path / "out",
+        jest_junit_reporter_path=Path("/fake/jest-junit"),
+        commit_repo=commit_repo,
+        coverage_repo=coverage_repo,
+        outcome_repo=outcome_repo,
+        num_commits=1,
+        ensure_cloned=lambda repo_url, dest: None,
+        list_last_n_commits=lambda repo_path, n: ["sha1"],
+        checkout=lambda repo_path, sha: None,
+        commit_date=lambda repo_path, sha: "2026-08-01T00:00:00+00:00",
+        install=lambda repo_path: InstallResult(succeeded=True),
+        list_test_files=fake_list_test_files,
+        run_tests_for_file=lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("should not be called when list_test_files fails")
+        ),
+    )
+
+    assert result.collected == ()
+    assert result.skipped_commits == (
+        ("sha1", "jest --listTests failed: config error"),
+    )
+    assert commit_repo.get_recent(1) == []
+
+
+def test_collect_history_records_failing_test_outcome(tmp_path: Path):
+    commit_repo, coverage_repo, outcome_repo = _repos(tmp_path)
+
+    def fake_run_tests_for_file(repo_path, test_file, output_dir, reporter_path):
+        _write_fixture_reports_with_failure(output_dir)
+        return RunResult(
+            output_dir / "cobertura-coverage.xml", output_dir / "junit.xml", skipped=False
+        )
+
+    result = collect_history(
+        repo_url="https://example.invalid/repo.git",
+        clone_dest=tmp_path / "repo",
+        output_root=tmp_path / "out",
+        jest_junit_reporter_path=Path("/fake/jest-junit"),
+        commit_repo=commit_repo,
+        coverage_repo=coverage_repo,
+        outcome_repo=outcome_repo,
+        num_commits=1,
+        ensure_cloned=lambda repo_url, dest: None,
+        list_last_n_commits=lambda repo_path, n: ["sha1"],
+        checkout=lambda repo_path, sha: None,
+        commit_date=lambda repo_path, sha: "2026-08-01T00:00:00+00:00",
+        install=lambda repo_path: InstallResult(succeeded=True),
+        list_test_files=lambda repo_path: ["src/a.test.ts"],
+        run_tests_for_file=fake_run_tests_for_file,
+    )
+
+    assert result.collected == ("sha1",)
+    assert outcome_repo.failure_rate("a.test.broken") == 1.0
+    assert outcome_repo.failure_rate("a.test.works") == 0.0
 
 
 def test_collect_history_ingests_successful_commits(tmp_path: Path):
