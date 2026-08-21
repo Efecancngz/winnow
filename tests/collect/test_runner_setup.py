@@ -1,7 +1,9 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from winnow.collect.runner import install, list_test_files
+import pytest
+
+from winnow.collect.runner import RunnerError, install, list_test_files
 
 
 def _completed(returncode: int = 0, stdout: str = "", stderr: str = ""):
@@ -48,6 +50,15 @@ def test_list_test_files_parses_newline_separated_output(tmp_path: Path):
     args, kwargs = fake_run.call_args
     assert args[0] == ["npx", "jest", "--listTests"]
     assert kwargs["cwd"] == tmp_path
+
+
+def test_list_test_files_raises_runner_error_on_nonzero_returncode(tmp_path: Path):
+    fake_run = MagicMock(
+        return_value=_completed(returncode=1, stderr="jest config error")
+    )
+
+    with pytest.raises(RunnerError, match="jest --listTests failed"):
+        list_test_files(tmp_path, run=fake_run)
 
 
 def test_list_test_files_ignores_blank_lines(tmp_path: Path):

@@ -44,6 +44,27 @@ def test_run_tests_for_file_succeeds_when_reports_exist(tmp_path: Path):
     assert result.junit_path == output_dir / "junit.xml"
 
 
+def test_run_tests_for_file_clears_stale_reports_before_running(tmp_path: Path):
+    output_dir = tmp_path / "out"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    # Simulate leftover reports from a previous test file run in the same commit dir.
+    (output_dir / "cobertura-coverage.xml").write_text("<coverage/>stale")
+    (output_dir / "junit.xml").write_text("<testsuites/>stale")
+
+    # This run "crashes" and writes no new report files.
+    fake_run = MagicMock(return_value=_completed(returncode=1, stderr="jest crashed"))
+
+    result = run_tests_for_file(
+        tmp_path, "src/b.test.ts", output_dir, Path("/fake/jest-junit"), run=fake_run
+    )
+
+    assert result.skipped is True
+    assert result.coverage_path is None
+    assert result.junit_path is None
+    assert not (output_dir / "cobertura-coverage.xml").exists()
+    assert not (output_dir / "junit.xml").exists()
+
+
 def test_run_tests_for_file_invokes_jest_with_expected_flags(tmp_path: Path):
     output_dir = tmp_path / "out"
     captured = {}
