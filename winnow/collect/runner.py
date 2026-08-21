@@ -5,6 +5,10 @@ from pathlib import Path
 from typing import Callable
 
 
+class RunnerError(Exception):
+    pass
+
+
 @dataclass(frozen=True)
 class InstallResult:
     succeeded: bool
@@ -15,7 +19,13 @@ def install(
     repo_path: Path,
     run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
 ) -> InstallResult:
-    result = run(["npm", "ci"], cwd=repo_path, capture_output=True, text=True)
+    result = run(
+        ["npm", "ci"],
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
+        shell=(os.name == "nt"),
+    )
     if result.returncode != 0:
         return InstallResult(succeeded=False, reason=f"npm ci failed: {result.stderr[-500:]}")
     return InstallResult(succeeded=True)
@@ -26,8 +36,14 @@ def list_test_files(
     run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
 ) -> list[str]:
     result = run(
-        ["npx", "jest", "--listTests"], cwd=repo_path, capture_output=True, text=True
+        ["npx", "jest", "--listTests"],
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
+        shell=(os.name == "nt"),
     )
+    if result.returncode != 0:
+        raise RunnerError(f"jest --listTests failed: {result.stderr[-500:]}")
     return [line for line in result.stdout.splitlines() if line.strip()]
 
 
@@ -49,6 +65,8 @@ def run_tests_for_file(
     output_dir.mkdir(parents=True, exist_ok=True)
     coverage_path = output_dir / "cobertura-coverage.xml"
     junit_path = output_dir / "junit.xml"
+    coverage_path.unlink(missing_ok=True)
+    junit_path.unlink(missing_ok=True)
 
     env = {
         **os.environ,
@@ -72,6 +90,7 @@ def run_tests_for_file(
         capture_output=True,
         text=True,
         env=env,
+        shell=(os.name == "nt"),
     )
 
     if not coverage_path.exists() or not junit_path.exists():
