@@ -1,0 +1,30 @@
+# Environment
+.env
+*.local
+
+# MCP/Claude config with local credentials (e.g. GitHub PAT)
+mcp.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Winnow data store (generated, not source)
+data/*.db
+data/*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
