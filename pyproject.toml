@@ -21,3 +21,7 @@ include = ["winnow*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: needs real network/npm/jest, excluded by default (run with `pytest -m slow`)",
+]
+addopts = "-m \"not slow\""
