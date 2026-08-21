@@ -20,6 +20,10 @@ htmlcov/
 # Winnow data store (generated, not source)
 data/*.db
 data/*.sqlite3
+data/ts-pattern/
+
+# Node.js (jest-reporters helper for the history collector)
+node_modules/
 
 # IDE
 .vscode/
