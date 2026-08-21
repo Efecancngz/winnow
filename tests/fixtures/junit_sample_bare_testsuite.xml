@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="pytest" tests="2" failures="1" errors="0" time="0.30">
+  <testcase classname="tests.test_qux" name="test_passes" time="0.10"/>
+  <testcase classname="tests.test_qux" name="test_fails" time="0.20">
+    <failure message="AssertionError">Traceback...</failure>
+  </testcase>
+</testsuite>
