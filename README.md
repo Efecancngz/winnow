@@ -22,7 +22,8 @@ Python · scikit-learn · SQLite · coverage.py · junitparser · GitPython · G
 ```bash
 git clone <repo-url>
 cp .env.example .env
-# implementation not started yet — see docs/superpowers/specs/ for the design
+pip install -e ".[dev]"
+pytest
 ```
 
 ## Documentation
@@ -33,8 +34,10 @@ cp .env.example .env
 
 ## Status
 
-Planning complete, implementation not started. See
-[HANDOFF.md](HANDOFF.md) for the current state.
+Core engine (ingest, store, selection pipeline, synthetic bootstrap
+validation) implemented and tested — 30+ tests passing. ML risk scoring,
+real-repo backtesting, and the GitHub Action are a follow-up plan (see
+[HANDOFF.md](HANDOFF.md)).
 
 ## License
 

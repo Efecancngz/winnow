@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="pytest" tests="4" failures="1" errors="0" time="1.234">
+    <testcase classname="tests.test_foo" name="test_passes" time="0.10"/>
+    <testcase classname="tests.test_foo" name="test_fails" time="0.20">
+      <failure message="AssertionError">Traceback...</failure>
+    </testcase>
+    <testcase classname="tests.test_bar" name="test_also_passes" time="0.05"/>
+    <testcase classname="tests.test_baz" name="test_skipped" time="0.00">
+      <skipped message="not implemented"/>
+    </testcase>
+  </testsuite>
+</testsuites>
