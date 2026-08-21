@@ -26,7 +26,7 @@ touches `selection/pipeline.py` must preserve this.
 
 ## Run commands
 
-Not applicable yet — implementation not started (see HANDOFF.md).
+`pip install -e ".[dev]"` to install, `pytest -v` to run the full test suite.
 
 ## Config
 
