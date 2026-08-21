@@ -1,13 +1,16 @@
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
 from winnow.collect import repo as repo_ops
 from winnow.collect import runner as runner_ops
-from winnow.collect.runner import InstallResult, RunResult
+from winnow.collect.runner import InstallResult, RunnerError, RunResult
 from winnow.ingest.cobertura import CoberturaParser
 from winnow.ingest.junit import JUnitParser
 from winnow.store.repository import CommitRepository, CoverageRepository, TestOutcomeRepository
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -49,13 +52,22 @@ def collect_history(
 
         install_result = install(clone_dest)
         if not install_result.succeeded:
-            skipped_commits.append((sha, install_result.reason or "unknown"))
+            reason = install_result.reason or "unknown"
+            skipped_commits.append((sha, reason))
+            logger.warning("skipping commit %s: %s", sha, reason)
             continue
 
-        test_files = list_test_files(clone_dest)
+        try:
+            test_files = list_test_files(clone_dest)
+        except RunnerError as e:
+            skipped_commits.append((sha, str(e)))
+            logger.warning("skipping commit %s: %s", sha, str(e))
+            continue
+
         commit_repo.add(sha, commit_date(clone_dest, sha))
 
         any_file_succeeded = False
+        succeeded_count = 0
         for test_file in test_files:
             output_dir = output_root / sha
             run_result = run_tests_for_file(
@@ -63,7 +75,9 @@ def collect_history(
             )
 
             if run_result.skipped:
-                skipped_files.append((sha, test_file, run_result.reason or "unknown"))
+                reason = run_result.reason or "unknown"
+                skipped_files.append((sha, test_file, reason))
+                logger.warning("skipping file %s in commit %s: %s", test_file, sha, reason)
                 continue
 
             coverage_report = cobertura_parser.parse(run_result.coverage_path)
@@ -73,9 +87,16 @@ def collect_history(
                 coverage_repo.add_coverage(sha, outcome.test_id, coverage_report)
             outcome_repo.add_outcomes(sha, outcomes)
             any_file_succeeded = True
+            succeeded_count += 1
 
         if any_file_succeeded:
             collected.append(sha)
+            logger.info(
+                "collected commit %s (%d/%d test files succeeded)",
+                sha,
+                succeeded_count,
+                len(test_files),
+            )
 
     return CollectionResult(
         collected=tuple(collected),
