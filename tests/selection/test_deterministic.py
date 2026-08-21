@@ -37,6 +37,8 @@ def test_narrows_by_changed_lines_when_given(tmp_path: Path):
     result = must_run_tests(diff, repo)
 
     assert result.must_run == frozenset()
+    assert result.full_suite_required is False
+    assert result.unknown_files == frozenset()
 
 
 def test_unknown_file_triggers_full_suite_fallback(tmp_path: Path):
