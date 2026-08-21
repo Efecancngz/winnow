@@ -22,6 +22,11 @@ class SelectionResult:
 
 
 def must_run_tests(diff: Diff, coverage_repo: CoverageRepository) -> SelectionResult:
+    if not diff.changed_files:
+        return SelectionResult(
+            must_run=frozenset(), full_suite_required=True, unknown_files=frozenset()
+        )
+
     selected: set[str] = set()
     unknown: set[str] = set()
 

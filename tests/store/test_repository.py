@@ -30,7 +30,23 @@ def test_coverage_repository_tests_covering_file(tmp_path: Path):
 
     assert repo.tests_covering_file("module_a.py") == {"test_a"}
     assert repo.tests_covering_file("module_a.py", changed_lines=frozenset({2})) == {"test_a"}
-    assert repo.tests_covering_file("module_a.py", changed_lines=frozenset({99})) == set()
+    # no intersection with recorded lines, but falls back to the full
+    # file-level set rather than returning nothing (see dedicated test below)
+    assert repo.tests_covering_file("module_a.py", changed_lines=frozenset({99})) == {"test_a"}
+
+
+def test_coverage_repository_tests_covering_file_falls_back_when_lines_dont_intersect(
+    tmp_path: Path,
+):
+    repo = CoverageRepository(_conn(tmp_path))
+
+    report = CoverageReport(files=(FileCoverage("module_a.py", frozenset({1, 2, 3})),))
+    repo.add_coverage("sha1", "test_a", report)
+
+    # changed_lines don't intersect any recorded coverage line, but the file
+    # itself is covered by test_a -> fall back to the full file-level set
+    # instead of silently returning nothing.
+    assert repo.tests_covering_file("module_a.py", changed_lines=frozenset({99})) == {"test_a"}
 
 
 def test_coverage_repository_is_known_file(tmp_path: Path):

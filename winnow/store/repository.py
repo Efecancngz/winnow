@@ -52,13 +52,18 @@ class CoverageRepository:
         ).fetchall()
 
         matched: set[str] = set()
+        all_tests: set[str] = set()
         for test_id, lines_csv in rows:
+            all_tests.add(test_id)
             if changed_lines is None:
                 matched.add(test_id)
                 continue
             covered = {int(n) for n in lines_csv.split(",") if n}
             if covered & changed_lines:
                 matched.add(test_id)
+
+        if changed_lines is not None and not matched and all_tests:
+            return all_tests
         return matched
 
 
