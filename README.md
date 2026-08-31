@@ -20,7 +20,7 @@ Python · scikit-learn · SQLite · coverage.py · junitparser · GitPython · G
 ## Quick start
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/Efecancngz/winnow.git
 cp .env.example .env
 pip install -e ".[dev]"
 pytest
