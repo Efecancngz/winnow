@@ -83,6 +83,15 @@ def run_tests_for_file(
             "--coverage",
             f"--coverageDirectory={output_dir}",
             "--coverageReporters=cobertura",
+            # v8, not Jest's default `babel` provider. Babel instruments the
+            # source, and on a type-heavy project that is not merely slow: on
+            # ts-pattern at 2025-08-31 it consumed a 4GB heap and died, and an
+            # 8GB limit only moved the crash to 8.1GB — unbounded, not short.
+            # The same file runs in 1.5s without coverage and 4.4s under v8,
+            # which emits the same `src/` entries in Cobertura form.
+            # This only shows up when walking back into older toolchains, so
+            # HEAD-only testing will keep reporting that it works.
+            "--coverageProvider=v8",
             "--reporters=default",
             f"--reporters={jest_junit_reporter_path}",
         ],
