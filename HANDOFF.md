@@ -1,109 +1,152 @@
 # Handoff — Winnow
 
-Son güncelleme: 2026-09-04 17:00, güncelleyen: Claude Sonnet 5
+Son güncelleme: 2026-09-08, güncelleyen: Claude Opus 5
 
 ## Şu an ne yapılıyor
 
-Tarih toplayıcısı tamamlandı ve **gerçek veri ilk kez toplandı**. HANDOFF'un
-önceki sürümü "gerçek tarih verisi incelenebilir duruma geldikten sonra yeni
-bir tasarım geçişi başlatılmalı" diyordu; o toplama koşuldu ve tasarımı
-doğrudan etkileyen üç bulgu çıkardı (aşağıda).
+Backtest deposu kararı **kapatıldı: mobx** (`packages/mobx`). Karar tahminle
+değil ölçümle verildi; toplayıcı mobx üzerinde uçtan uca koştu ve 3 commit
+sorunsuz toplandı. Sırada **mutasyon tabanlı yer gerçeği** ve ondan önce
+**seçim birimi kararı** var (aşağıda).
 
-Toplama `tools/collect_history.py` ile ts-pattern'in son 30 commit'i üzerinde
-koşturuldu. **Bu satır yazılırken koşu hâlâ devam ediyordu (~20/30).** Veri
-`data/ts-pattern/winnow.db` içinde ve gitignore'da; kaldığı yerden değil,
-baştan koşulur (commit'ler `--reverse`, yani en eskiden başlar).
+## Backtest deposu: neden mobx
 
-## Toplama sırasında bulunan ve düzeltilen kusur
+Aday taraması (7 depo: rxjs, date-fns, immer, fp-ts, luxon, ts-morph, mobx)
+beklenmedik bir yapısal gerçek çıkardı: **7 depodan sadece 2'si hâlâ Jest
+kullanıyor.** rxjs, date-fns, immer ve fp-ts Vitest'e geçmiş. Toplayıcı
+Jest/JUnit/Cobertura'ya bağlı olduğu için aday havuzu bu bulguyla daraldı.
 
-Toplayıcı gerçek geçmişi **işleyemiyordu**. HEAD'de 48/48 test dosyası
-başarıyla toplanıyordu, ama 9 ay geriye gidince (2025-08-31) her dosya
-çöküyordu: `FATAL ERROR: Ineffective mark-compacts near heap limit`, 4GB'ta.
-Heap'i 8GB'a çıkarmak çöküşü 8.1GB'a taşıdı — eksiklik değil, sınırsız
-büyüme. Kurulu araç zinciri package.json ile birebir aynıydı.
+rxjs ilk tercihti (246 kaynak dosya, en gerçekçi CI maliyeti) ama depo
+açılınca elendi: **pnpm 10 + nx monorepo** (`npm ci` çalışmaz), üç ayrı Vitest
+yapılandırması ve `RXJS_NEXT_TEST_MODE` anahtarı, ve depo şu anda yeniden
+yazılıyor — geçmişe gidildiğinde test kurulumu tamamen değişiyor. Bu sonuncusu
+ts-pattern'deki babel/v8 heap hatasının aynı ailesi: HEAD'de görünmez.
 
-Sebep: Jest'in varsayılan `babel` coverage sağlayıcısı, tip-ağır bir projeyi
-enstrümante ediyor. Aynı dosya coverage'sız 1.5sn, `--coverageProvider=v8`
-ile 4.4sn sürüyor ve Cobertura çıktısında aynı 7 `src/` kaydını veriyor —
-`CoberturaParser` değişiklik gerektirmeden okuyor. Düzeltme commit `11245e0`.
+Diğer Vitest adayları da farklı sebeplerle elendi: zod (`nub` adlı özel paket
+yöneticisi), date-fns (1539 kaynak dosyaya karşı ~5 test dosyası), fp-ts
+(dtslint bağımlı), immer (ts-pattern'den küçük).
 
-**Ders (genel):** bir geçmiş toplayıcısını HEAD'de doğrulamak, tam da yapmak
-zorunda olmadığı tek durumu test etmektir.
+mobx mekanik olarak sıkıcı, ki aranan buydu: standart npm workspaces, düz
+Jest, 56 kaynak dosyası, 32 test dosyası, harici servis yok.
 
-## Gerçek veriden çıkan üç bulgu (20 commit itibarıyla)
+## Ölçülen maliyet (mobx, gerçek koşu)
 
-### 1. Gerçek geçmiş eğitim etiketi üretmiyor
+| | |
+|---|---|
+| `npm ci` (commit başına sabit) | 89 sn |
+| `jest --listTests` | 16 sn |
+| Test dosyası başına (sıcak önbellek) | ort. 17,4 sn (10–21) |
+| Test dosyası başına (soğuk) | 43 sn |
+| **Commit başına (3 commit'lik gerçek koşu)** | **674 sn ≈ 11,2 dk** |
+| Kararlı hız (klon/ilk kurulum hariç) | 8,8 dk |
+| Atlanan commit / dosya | 0 / 0 |
+| Veritabanı büyüklüğü | 22,8 MB / commit |
 
-**8.945 (commit, test) çiftinde 0 test patlaması.** Sağlıklı bir depoda
-main'e kırık commit girmiyor. Bu, mutasyon-temelli yer gerçeğini bir tercih
-değil **zorunluluk** yapıyor — ve artık gerekçesi teoriden değil sayıdan
-geliyor. (Facebook'un *Predictive Test Selection* makalesinin uğraştığı
-etiket kıtlığı probleminin ta kendisi.)
+30 commit ≈ **4,5–5,5 saat**, ~685 MB. Bir gecelik iş.
 
-### 2. JUnit süreleri yanlış maliyet modeli
+Not: dosya başına maliyet, dosyadaki test sayısından bağımsız. `api.js`
+(2 test) ve `observables.js` (88 test) ikisi de ~17–19 sn. Bu, 2. bulgunun
+(maliyet birimi test değil dosya) bağımsız doğrulaması.
 
-JUnit tüm suite için commit başına **~0.38 saniye** rapor ediyor; gerçekte
-ödenen **dakikalar**. Ölçülen oran commit 29fbd3aa'da 244sn / 0.213sn =
-**1.146×** (bu sayı `npm install`'ı da içeriyor; kurulum düşülüp 48 dosyaya
-bölününce dosya başına ~4sn'ye karşı test başına ~0.005sn, yani ~800×).
+## Yeni bulgu 1: mobx'te dosya seviyeli seçim ölü, satır seviyeli çalışıyor
 
-Maliyetin %99.9'undan fazlası test yürütmesi değil, **dosya başına Jest
-başlatma + tip kontrolü**. Sonuçları:
+11 test dosyası örneklendi ve coverage kesişimleri ölçüldü:
 
-- Seçicinin değeri **atlanan test dosyası** ile ölçülmeli, atlanan test ile değil.
-- Kazanç JUnit sürelerinden hesaplanırsa ~1000 kat küçük, anlamsız bir sayı çıkar.
-- ML'in **seçim birimi** muhtemelen tek test değil, test dosyası olmalı.
+- **Dosya seviyesi:** 54 kaynak dosyanın **hepsi**, 11 testin **hepsi**
+  tarafından kapsanıyor (K=11, istisnasız). Sebep barrel import — her test
+  paketin giriş noktasını çekiyor. Dosya granülerliğinde aptal sezgisel her
+  değişiklikte **tüm suite'i** seçer; yenilecek bir rakip yok.
+- **Satır seviyesi:** 6.818 farklı kapsanan satır. **%15,1'i tek bir test**
+  tarafından, **%45,4'ü tüm testler** tarafından kapsanıyor. Çiftler arası
+  Jaccard: ortalama 0,762 (min 0,532, maks 0,892).
 
-### 3. ts-pattern backtest deneği olarak muhtemelen yanlış seçim
+**Sonuç:** Winnow'un karşılaştıracağı dürüst temel çizgi **satır seviyeli
+coverage** olmalı. Dosya seviyeli sezgiseli yenmek hileli bir karşılaştırma
+olur, çünkü o baştan kaybediyor. Bimodal dağılım iyi haber: depoda hem çok
+seçici hem kaçınılmaz olarak geniş değişiklikler var, yani precision/recall
+ölçümü anlamlı.
 
-`distinct_source_files = 8`. Sekiz kaynak dosyalık bir depoda "hangi dosya
-değişti → hangi testler koşsun" eşlemesi neredeyse aşikâr; kapsama tabanlı
-aptal sezgisel muhtemelen yenilemez. Roadmap'in bitiş kriteri tam olarak
-"ML'in precision/recall'unu aptal sezgisele karşı savunabilmek" olduğuna
-göre, bu depo o karşılaştırmaya yer bırakmıyor.
+## Yeni bulgu 2: mobx de gerçek etiket üretmiyor
 
-Handoff'un önceki sürümü zaten "backtesting için henüz bir açık kaynak repo
-seçilmedi" diyordu. **Bu karar hâlâ açık ve artık bilgilendirilmiş durumda:**
-daha çok kaynak dosyası ve daha gerçek bir CI maliyeti olan bir depo gerekli.
+3 commit'te 2.324 test sonucu, 9 başarısızlık. Ama üç farklı test, **üç
+commit'in de hepsinde** başarısız:
 
-## Sıradaki somut adım
+```
+makeAutoObservable + production build #2751   FAIL FAIL FAIL
+Default debug names - production              FAIL FAIL FAIL
+User provided debug names are always respected FAIL FAIL FAIL
+```
 
-1. **Backtest deposu kararı** — ts-pattern'i tutmak (küçük ama tanıdık) mı,
-   daha büyük bir TS/Jest projesine geçmek mi. Bulgu 3 bunu tetikliyor.
-2. **Mutasyon-temelli yer gerçeği tasarımı** (`winnow/backtest/` + Stryker,
-   `killedBy`/`coveredBy`). Bulgu 1 bunu zorunlu kılıyor.
+Üçü de production build gerektiriyor; mobx bunları ayrı bir jest
+yapılandırmasıyla koşuyor, `--selectProjects mobx` yalnızca temel projeyi
+alıyor. Yani bunlar commit'in kırdığı testler değil, **sürekli kırık**
+testler — varyansları sıfır, eğitim etiketi olarak değersiz.
+
+**Yani ts-pattern'deki "0 patlama" bulgusu ikinci bir depoda doğrulandı.**
+Mutasyon tabanlı yer gerçeği artık iki bağımsız ölçüme dayanıyor.
+
+**Türetilen veri hijyeni kuralı:** sürekli başarısız testler yer gerçeğinden
+dışlanmalı. Dışlanmazsa model "bu test hep kırılır" diye öğrenir ve
+precision/recall yapay olarak şişer.
+
+## Toplayıcıda bulunup düzeltilen dört kusur (hepsi test-önce)
+
+1. **`--listTests` başlık satırı.** `--selectProjects` ile Jest stdout'un ilk
+   satırına `Running one project: mobx` yazıyor; `list_test_files` bunu test
+   yolu olarak kaydediyordu. Filtre metin kara listesi değil, satırın şekli
+   üzerine kuruldu (Jest yolları her zaman mutlak).
+2. **Paket kapsamı.** mobx'in kök config'i beş paketi kapsıyor. `jest_project`
+   parametresi eklendi (`--selectProjects`); tek paketli depolarda bayrak hiç
+   eklenmiyor, çünkü orada Jest hata veriyor. CLI'ya `--project` geldi.
+   `collect_history`'ye parametre eklenmedi — zaten var olan bağımlılık
+   enjeksiyon dikişi `functools.partial` ile kullanıldı.
+3. **Ters bölü yolları.** Windows'ta Cobertura `packages\mobx\src\...`
+   yazıyor, git diff'i `/` kullanıyor. Eşleşme olmazdı, `is_known_file` False
+   dönerdi, seçici her seferinde tüm suite'i isterdi — **hiçbir hata mesajı
+   olmadan.** `CoberturaParser` artık normalize ediyor. Gerçek veride
+   doğrulandı: 126.396 satırın **0'ında** ters bölü var.
+4. **Kodlama.** Alt süreçler `text=True` ile ama `encoding` olmadan
+   çağrılıyordu, yani sistem yerel kodlaması (bu makinede **cp1254**). Jest
+   çıktısındaki çözülemeyen baytlar okuma thread'ini öldürüyor ve yakalanan
+   çıktı sessizce kayboluyor. Gerçek koşuda **6 kez** oldu. `run_tests_for_file`
+   şansa hayatta kaldı (başarıyı rapor dosyalarının varlığından ölçüyor), ama
+   `list_test_files` stdout'u **ayrıştırıyor** — orada olsaydı commit sessizce
+   "0 test dosyası" olarak kaydedilirdi. `runner.py` (3 çağrı) ve `repo.py`
+   (git) artık `encoding="utf-8", errors="replace"` kullanıyor.
+
+Test sayısı 58 → 69, hepsi yeşil.
+
+## Sıradaki somut adımlar
+
+1. **Seçim birimi kararı (önce bu).** Coverage her *test case* için ayrı
+   saklanıyor, ama Jest coverage'ı *test dosyası* başına üretiyor:
+   `observables.js`'in 88 testi aynı veriyi 88 kez saklıyor. Ölçüldü:
+   22,8 MB/commit, olması gereken ~0,9 MB — **~26 kat şişkinlik.** Asıl sorun
+   yer değil: şema, hiç toplanmamış bir per-test attribution iddia ediyor.
+   Düzeltmek `test_id`'nin anlamını değiştirmek demek ve o kimlik
+   `must_run_tests` → `SelectionPipeline` → `RiskScorer` → `failure_rate`
+   zincirinin tamamından geçiyor. Yani bu bir optimizasyon değil, **Winnow'un
+   seçim birimini test'ten test dosyasına taşıma kararı** — 2. bulgunun açtığı
+   tasarım sorusu. Kendi tasarım turunu hak ediyor.
+2. **Toplayıcıya geçmişte adım atma seçeneği.** Şu an yalnızca "son N commit"
+   toplanabiliyor (`git log main -N --reverse`). Araç zincirinin geçmişte
+   nerede kırıldığını ölçmek için (ör. HEAD, HEAD~50, HEAD~200) aralık/adım
+   desteği gerekiyor. Bugünkü 3 commit'lik koşu kablolamayı doğruladı ama
+   geçmişe kayma riskini **ölçmedi**.
+3. **Mutasyon tabanlı yer gerçeği** (`winnow/backtest/` + Stryker,
+   `killedBy`/`coveredBy`). Artık iki depodan gelen ölçümle zorunlu.
    **Tasarımda ele alınması gereken asıl soru:** mutantlar gerçek hatalara
    benziyor mu (coupling hypothesis)? Benzemiyorsa model *hata yakalamayı*
-   değil *mutant öldürmeyi* öğrenir ve precision/recall mükemmel görünürken
-   üretimde regresyon kaçırır.
-3. ML risk skorlayıcı, sonra GitHub Action.
+   değil *mutant öldürmeyi* öğrenir; precision/recall mükemmel görünürken
+   üretimde regresyon kaçar.
+4. ML risk skorlayıcı, sonra GitHub Action.
 
-## Bilinmesi gerekenler
+## Toplama komutu
 
-- Deterministik "must-run" kümesi ML tarafından asla daraltılmaz — sadece
-  zenginleştirilir. `selection/pipeline.py` yazılırken korunmalı. Bunun
-  metrik sonucu: **kaçırılan patlayan test ile boşuna koşulan test aynı
-  maliyette değil**, yani precision ve recall eşit ağırlıkta değerlendirilemez.
-- Toplama maliyeti: commit başına 4-10 dakika. Bağımlılık yükselten commit'ler
-  (dependabot) belirgin şekilde yavaş, çünkü süre `npm install`'ı da içeriyor.
-  Koşu sırasında commit başına süre 250sn'den 622sn'ye çıktı; npm çalkantısı mı
-  ortam yavaşlaması mı **ayrıştırılamadı** (toplayıcı kurulum ile test süresini
-  ayrı ölçmüyor — istenirse enstrümante edilebilir).
-- v8 coverage'ın satır çözünürlüğü babel'den daha kaba olabilir
-  (`is-matching.ts` için 1-52 arası kesintisiz kapsanmış görünüyor). Dosya
-  düzeyi atribüsyon için sorun değil; model satır düzeyi granülerlik
-  kullanacaksa doğrulanmalı.
+```bash
+python tools/collect_history.py 30 \
+  --repo https://github.com/mobxjs/mobx.git \
+  --project mobx
+```
 
-## İlgili dosyalar
-
-- `tools/collect_history.py` — gerçek geçmiş toplama (yeniden koşulabilir)
-- `tools/analyze_history.py` — toplanan verinin ne içerdiğini raporlar
-- `docs/superpowers/specs/2026-08-21-winnow-design.md` — onaylanmış tasarım
-- `docs/architecture.md` — modül yapısı ve pattern kararları
-- `docs/analiz.md` — §0 planlama çıktısı
-
-## Son 3 commit
-
-- tools: reproducible history collection and analysis entry points
-- 11245e0 fix(collect): use the v8 coverage provider so real history is collectable
-- b30deaa chore(jest-reporters): add package-lock.json from real npm install
+Veri `data/mobx/` altında (gitignore'da, `data/*/` deseniyle).
