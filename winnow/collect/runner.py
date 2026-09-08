@@ -24,6 +24,12 @@ def install(
         cwd=repo_path,
         capture_output=True,
         text=True,
+        # Not the locale codec: on a Turkish Windows console that is
+        # cp1254, and jest emits bytes it cannot decode. The reader thread
+        # then dies and the captured output is lost, which list_test_files
+        # would read as "this commit has no test files".
+        encoding="utf-8",
+        errors="replace",
         shell=(os.name == "nt"),
     )
     if result.returncode != 0:
@@ -31,20 +37,60 @@ def install(
     return InstallResult(succeeded=True)
 
 
+def _is_absolute_test_path(line: str) -> bool:
+    """True for a jest --listTests path, false for its human-readable preamble.
+
+    With --selectProjects, jest prints a header ("Running one project: mobx")
+    to stdout before the paths. Filtering on shape rather than on that exact
+    string keeps this working if the wording changes: jest always emits
+    absolute paths, and the preamble is never one.
+    """
+    stripped = line.strip()
+    if not stripped:
+        return False
+    if stripped.startswith("/"):
+        return True
+    return len(stripped) > 2 and stripped[1] == ":" and stripped[2] in ('\\', "/")
+
+
+def _jest_argv(jest_project: str | None) -> list[str]:
+    """Base jest invocation, scoped to one project when the repo defines several.
+
+    mobx's root config declares `projects: packages/*/jest.config.js`, so an
+    unscoped run would install and execute mobx-react and friends on every
+    commit. Single-package repos (ts-pattern) have no named projects and jest
+    fails if the flag is passed, so it is omitted unless asked for.
+    """
+    if jest_project is None:
+        return ["npx", "jest"]
+    return ["npx", "jest", "--selectProjects", jest_project]
+
+
 def list_test_files(
     repo_path: Path,
     run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+    jest_project: str | None = None,
 ) -> list[str]:
     result = run(
-        ["npx", "jest", "--listTests"],
+        _jest_argv(jest_project) + ["--listTests"],
         cwd=repo_path,
         capture_output=True,
         text=True,
+        # Not the locale codec: on a Turkish Windows console that is
+        # cp1254, and jest emits bytes it cannot decode. The reader thread
+        # then dies and the captured output is lost, which list_test_files
+        # would read as "this commit has no test files".
+        encoding="utf-8",
+        errors="replace",
         shell=(os.name == "nt"),
     )
     if result.returncode != 0:
         raise RunnerError(f"jest --listTests failed: {result.stderr[-500:]}")
-    return [line for line in result.stdout.splitlines() if line.strip()]
+    return [
+        line.strip()
+        for line in result.stdout.splitlines()
+        if _is_absolute_test_path(line)
+    ]
 
 
 @dataclass(frozen=True)
@@ -61,6 +107,7 @@ def run_tests_for_file(
     output_dir: Path,
     jest_junit_reporter_path: Path,
     run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+    jest_project: str | None = None,
 ) -> RunResult:
     output_dir.mkdir(parents=True, exist_ok=True)
     coverage_path = output_dir / "cobertura-coverage.xml"
@@ -75,9 +122,8 @@ def run_tests_for_file(
     }
 
     result = run(
-        [
-            "npx",
-            "jest",
+        _jest_argv(jest_project)
+        + [
             "--runTestsByPath",
             test_file,
             "--coverage",
@@ -98,6 +144,12 @@ def run_tests_for_file(
         cwd=repo_path,
         capture_output=True,
         text=True,
+        # Not the locale codec: on a Turkish Windows console that is
+        # cp1254, and jest emits bytes it cannot decode. The reader thread
+        # then dies and the captured output is lost, which list_test_files
+        # would read as "this commit has no test files".
+        encoding="utf-8",
+        errors="replace",
         env=env,
         shell=(os.name == "nt"),
     )

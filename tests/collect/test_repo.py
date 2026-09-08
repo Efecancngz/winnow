@@ -94,3 +94,22 @@ def test_commit_date_returns_iso8601(tmp_path: Path):
 def test_checkout_raises_git_error_on_invalid_repo(tmp_path: Path):
     with pytest.raises(GitError):
         checkout(tmp_path, "nonexistent-sha")
+
+
+def test_git_calls_decode_as_utf8_not_locale(tmp_path: Path):
+    # Same defect as the jest runner: without an explicit encoding Python uses
+    # the locale codec (cp1254 on this machine). git's localised messages and
+    # non-ascii paths then kill the reader thread and the captured output is
+    # lost, so GitError reports an empty reason.
+    from unittest.mock import MagicMock
+
+    result = MagicMock()
+    result.returncode = 0
+    result.stdout = "2026-01-01T00:00:00+00:00"
+    fake_run = MagicMock(return_value=result)
+
+    commit_date(tmp_path, "sha", run=fake_run)
+
+    _, kwargs = fake_run.call_args
+    assert kwargs["encoding"] == "utf-8"
+    assert kwargs["errors"] == "replace"

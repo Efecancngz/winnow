@@ -10,7 +10,12 @@ class GitError(Exception):
 def _run(
     args: list[str], cwd: Path, run: Callable[..., subprocess.CompletedProcess]
 ) -> subprocess.CompletedProcess:
-    result = run(args, cwd=cwd, capture_output=True, text=True)
+    # Explicit utf-8, not the locale codec: on a Turkish Windows console
+    # that is cp1254, whose decode failures kill the reader thread and
+    # leave GitError reporting an empty reason.
+    result = run(
+        args, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace"
+    )
     if result.returncode != 0:
         raise GitError(f"{' '.join(args)} (in {cwd}) failed: {result.stderr}")
     return result

@@ -30,6 +30,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
+from functools import partial  # noqa: E402
+
+from winnow.collect import runner as runner_ops  # noqa: E402
 from winnow.collect.history import collect_history  # noqa: E402
 from winnow.store.repository import (  # noqa: E402
     CommitRepository,
@@ -48,6 +51,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("num_commits", type=int, nargs="?", default=30)
     parser.add_argument("--repo", default=DEFAULT_REPO_URL)
+    parser.add_argument(
+        "--project",
+        default=None,
+        help=(
+            "jest project name (displayName) to scope collection to, e.g. 'mobx'. "
+            "Required for multi-package repos whose root config declares "
+            "`projects: packages/*`; omit for single-package repos."
+        ),
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -81,6 +93,11 @@ def main() -> None:
         coverage_repo=CoverageRepository(conn),
         outcome_repo=TestOutcomeRepository(conn),
         num_commits=args.num_commits,
+        # collect_history already injects its runner callables; binding the
+        # project here reuses that seam instead of threading a second
+        # parameter through the whole call chain.
+        list_test_files=partial(runner_ops.list_test_files, jest_project=args.project),
+        run_tests_for_file=partial(runner_ops.run_tests_for_file, jest_project=args.project),
     )
 
     elapsed = time.perf_counter() - start

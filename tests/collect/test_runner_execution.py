@@ -119,3 +119,60 @@ def test_run_tests_for_file_uses_the_v8_coverage_provider(tmp_path: Path):
     )
 
     assert "--coverageProvider=v8" in captured["args"]
+
+
+def test_run_tests_for_file_scopes_to_jest_project_when_given(tmp_path: Path):
+    output_dir = tmp_path / "out"
+
+    def fake_run(args, **kwargs):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "cobertura-coverage.xml").write_text("<coverage/>")
+        (output_dir / "junit.xml").write_text("<testsuites/>")
+        fake_run.args = args
+        return _completed(returncode=0)
+
+    run_tests_for_file(
+        tmp_path,
+        "src/a.test.ts",
+        output_dir,
+        Path("/fake/jest-junit"),
+        run=fake_run,
+        jest_project="mobx",
+    )
+
+    assert fake_run.args[:4] == ["npx", "jest", "--selectProjects", "mobx"]
+
+
+def test_run_tests_for_file_omits_project_flag_when_not_given(tmp_path: Path):
+    output_dir = tmp_path / "out"
+
+    def fake_run(args, **kwargs):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "cobertura-coverage.xml").write_text("<coverage/>")
+        (output_dir / "junit.xml").write_text("<testsuites/>")
+        fake_run.args = args
+        return _completed(returncode=0)
+
+    run_tests_for_file(
+        tmp_path, "src/a.test.ts", output_dir, Path("/fake/jest-junit"), run=fake_run
+    )
+
+    assert "--selectProjects" not in fake_run.args
+
+
+def test_run_tests_for_file_decodes_as_utf8_not_locale(tmp_path: Path):
+    output_dir = tmp_path / "out"
+
+    def fake_run(args, **kwargs):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "cobertura-coverage.xml").write_text("<coverage/>")
+        (output_dir / "junit.xml").write_text("<testsuites/>")
+        fake_run.kwargs = kwargs
+        return _completed(returncode=0)
+
+    run_tests_for_file(
+        tmp_path, "src/a.test.ts", output_dir, Path("/fake/jest-junit"), run=fake_run
+    )
+
+    assert fake_run.kwargs["encoding"] == "utf-8"
+    assert fake_run.kwargs["errors"] == "replace"
