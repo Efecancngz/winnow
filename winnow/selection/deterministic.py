@@ -34,7 +34,7 @@ def must_run_tests(diff: Diff, coverage_repo: CoverageRepository) -> SelectionRe
         if not coverage_repo.is_known_file(changed_file.path):
             unknown.add(changed_file.path)
             continue
-        selected |= coverage_repo.tests_covering_file(
+        selected |= coverage_repo.test_files_covering(
             changed_file.path, changed_file.changed_lines
         )
 

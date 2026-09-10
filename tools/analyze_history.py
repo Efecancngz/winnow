@@ -29,6 +29,11 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
+
+from winnow.store.repository import PERMANENT_FAILURE_MIN_OBSERVATIONS  # noqa: E402
+from winnow.store.schema import ensure_current_schema  # noqa: E402
+
 DEFAULT_DB = REPO_ROOT / "data" / "ts-pattern" / "winnow.db"
 
 
@@ -42,22 +47,25 @@ def main() -> None:
         raise SystemExit(f"no store at {db} — run tools/collect_history.py first")
 
     conn = sqlite3.connect(db)
+    ensure_current_schema(conn, db)
 
     commits = q1(conn, "SELECT COUNT(*) FROM commits")
     outcomes = q1(conn, "SELECT COUNT(*) FROM test_outcomes")
-    tests = q1(conn, "SELECT COUNT(DISTINCT test_id) FROM test_outcomes")
+    tests = q1(conn, "SELECT COUNT(DISTINCT case_id) FROM test_outcomes")
+    test_files = q1(conn, "SELECT COUNT(DISTINCT test_file) FROM test_outcomes")
     failures = q1(conn, "SELECT COUNT(*) FROM test_outcomes WHERE passed = 0")
     failing_commits = q1(
         conn, "SELECT COUNT(DISTINCT commit_sha) FROM test_outcomes WHERE passed = 0"
     )
     failing_tests = q1(
-        conn, "SELECT COUNT(DISTINCT test_id) FROM test_outcomes WHERE passed = 0"
+        conn, "SELECT COUNT(DISTINCT case_id) FROM test_outcomes WHERE passed = 0"
     )
 
     print("=== collection sanity ===")
     print(f"commits_collected      {commits}")
     print(f"outcome_rows           {outcomes}")
     print(f"distinct_tests         {tests}")
+    print(f"distinct_test_files    {test_files}")
     if commits:
         print(f"tests_per_commit_avg   {outcomes / commits:.1f}")
 
@@ -104,10 +112,25 @@ def main() -> None:
     if failures:
         print()
         print("=== the failures themselves ===")
-        for sha, test_id in conn.execute(
-            "SELECT commit_sha, test_id FROM test_outcomes WHERE passed = 0 LIMIT 20"
+        for sha, test_file, case_id in conn.execute(
+            "SELECT commit_sha, test_file, case_id FROM test_outcomes "
+            "WHERE passed = 0 LIMIT 20"
         ):
-            print(f"  {sha[:8]}  {test_id}")
+            print(f"  {sha[:8]}  {test_file}  {case_id}")
+
+    print()
+    print(
+        f"=== cases excluded from ground truth "
+        f"(>= {PERMANENT_FAILURE_MIN_OBSERVATIONS} commits observed, never passed) ==="
+    )
+    for test_file, case_id, n in conn.execute(
+        "SELECT test_file, case_id, COUNT(DISTINCT commit_sha) FROM test_outcomes "
+        "GROUP BY test_file, case_id "
+        "HAVING COUNT(DISTINCT commit_sha) >= ? AND MAX(passed) = 0 "
+        "ORDER BY COUNT(DISTINCT commit_sha) DESC LIMIT 20",
+        (PERMANENT_FAILURE_MIN_OBSERVATIONS,),
+    ):
+        print(f"  {test_file}  {case_id}  observations={n}")
 
 
 if __name__ == "__main__":

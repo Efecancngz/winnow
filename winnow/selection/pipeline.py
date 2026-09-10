@@ -7,7 +7,7 @@ from winnow.store.repository import CoverageRepository, TestOutcomeRepository
 
 @dataclass(frozen=True)
 class RankedTest:
-    test_id: str
+    test_file: str
     risk_score: float
     reason: str
 
@@ -37,15 +37,15 @@ class SelectionPipeline:
         changed_paths = frozenset(cf.path for cf in diff.changed_files)
 
         ranked: list[RankedTest] = []
-        for test_id in det.must_run:
-            score = self._risk_scorer.score(test_id, changed_paths)
-            ranked.append(RankedTest(test_id, score, "direct coverage overlap"))
+        for test_file in det.must_run:
+            score = self._risk_scorer.score(test_file, changed_paths)
+            ranked.append(RankedTest(test_file, score, "direct coverage overlap"))
 
-        remaining = self._outcome_repo.all_test_ids() - det.must_run
-        for test_id in remaining:
-            score = self._risk_scorer.score(test_id, changed_paths)
+        remaining = self._outcome_repo.all_test_files() - det.must_run
+        for test_file in remaining:
+            score = self._risk_scorer.score(test_file, changed_paths)
             if score >= self._risk_threshold:
-                ranked.append(RankedTest(test_id, score, "risk score above threshold"))
+                ranked.append(RankedTest(test_file, score, "risk score above threshold"))
 
         ranked.sort(key=lambda r: r.risk_score, reverse=True)
 

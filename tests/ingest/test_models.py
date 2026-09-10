@@ -17,8 +17,9 @@ def test_coverage_report_holds_multiple_files():
     assert report.files[0].file_path == "a.py"
 
 
-def test_test_outcome_records_pass_and_duration():
-    outcome = TestOutcome(test_id="test_foo", passed=False, duration_seconds=0.42)
-    assert outcome.test_id == "test_foo"
+def test_test_outcome_carries_the_case_identity():
+    outcome = TestOutcome(case_id="a.test.foo", passed=False, duration_seconds=0.42)
+
+    assert outcome.case_id == "a.test.foo"
     assert outcome.passed is False
     assert outcome.duration_seconds == 0.42
