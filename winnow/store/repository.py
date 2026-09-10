@@ -26,13 +26,19 @@ class CoverageRepository:
     def __init__(self, conn: sqlite3.Connection):
         self._conn = conn
 
-    def add_coverage(self, commit_sha: str, test_id: str, report: CoverageReport) -> None:
+    def add_coverage(self, commit_sha: str, test_file: str, report: CoverageReport) -> None:
+        """One row per (commit, test file, source file).
+
+        Jest produces coverage per test FILE, never per test case. Writing a
+        row per case claimed an attribution that was never collected -- and
+        cost 26x the space saying it.
+        """
         for file_cov in report.files:
             lines_csv = ",".join(str(n) for n in sorted(file_cov.covered_lines))
             self._conn.execute(
-                """INSERT INTO test_coverage (commit_sha, test_id, file_path, covered_lines)
+                """INSERT INTO test_coverage (commit_sha, test_file, file_path, covered_lines)
                    VALUES (?, ?, ?, ?)""",
-                (commit_sha, test_id, file_cov.file_path, lines_csv),
+                (commit_sha, test_file, file_cov.file_path, lines_csv),
             )
         self._conn.commit()
 
@@ -43,27 +49,27 @@ class CoverageRepository:
         ).fetchone()
         return row is not None
 
-    def tests_covering_file(
+    def test_files_covering(
         self, file_path: str, changed_lines: frozenset[int] | None = None
     ) -> set[str]:
         rows = self._conn.execute(
-            "SELECT test_id, covered_lines FROM test_coverage WHERE file_path = ?",
+            "SELECT test_file, covered_lines FROM test_coverage WHERE file_path = ?",
             (file_path,),
         ).fetchall()
 
         matched: set[str] = set()
-        all_tests: set[str] = set()
-        for test_id, lines_csv in rows:
-            all_tests.add(test_id)
+        all_test_files: set[str] = set()
+        for test_file, lines_csv in rows:
+            all_test_files.add(test_file)
             if changed_lines is None:
-                matched.add(test_id)
+                matched.add(test_file)
                 continue
             covered = {int(n) for n in lines_csv.split(",") if n}
             if covered & changed_lines:
-                matched.add(test_id)
+                matched.add(test_file)
 
-        if changed_lines is not None and not matched and all_tests:
-            return all_tests
+        if changed_lines is not None and not matched and all_test_files:
+            return all_test_files
         return matched
 
 

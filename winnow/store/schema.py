@@ -10,10 +10,14 @@ CREATE TABLE IF NOT EXISTS commits (
 CREATE TABLE IF NOT EXISTS test_coverage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     commit_sha TEXT NOT NULL REFERENCES commits(sha),
-    test_id TEXT NOT NULL,
+    test_file TEXT NOT NULL,
     file_path TEXT NOT NULL,
-    covered_lines TEXT NOT NULL
+    covered_lines TEXT NOT NULL,
+    UNIQUE (commit_sha, test_file, file_path)
 );
+
+CREATE INDEX IF NOT EXISTS idx_test_coverage_file_path
+    ON test_coverage (file_path);
 
 CREATE TABLE IF NOT EXISTS test_outcomes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
