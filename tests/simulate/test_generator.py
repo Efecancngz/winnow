@@ -5,26 +5,31 @@ from winnow.store.repository import CoverageRepository
 from winnow.store.schema import init_db
 
 
-def test_generate_coverage_matrix_is_deterministic_for_same_seed():
-    fixture_a = generate_coverage_matrix(num_tests=10, num_files=5, seed=1)
-    fixture_b = generate_coverage_matrix(num_tests=10, num_files=5, seed=1)
+def test_generated_fixture_maps_test_files_to_source_files():
+    fixture = generate_coverage_matrix(num_test_files=10, num_files=5, seed=7)
 
-    assert fixture_a.test_to_files == fixture_b.test_to_files
-
-
-def test_generate_coverage_matrix_every_test_covers_at_least_one_file():
-    fixture = generate_coverage_matrix(num_tests=10, num_files=5, seed=1)
-
-    assert all(len(files) >= 1 for files in fixture.test_to_files.values())
+    assert len(fixture.test_files) == 10
+    assert all(f.endswith(".test.js") for f in fixture.test_files)
+    assert set(fixture.test_file_to_files) == set(fixture.test_files)
 
 
-def test_populate_store_writes_recorded_coverage(tmp_path: Path):
+def test_populate_store_writes_one_coverage_row_per_test_file_and_source_file(
+    tmp_path: Path,
+):
+    """Several cases live in one test file in the real data; coverage is still
+    one row per (test file, source file). If this ever writes cases_per_file
+    times as many rows, the unique constraint fires."""
     conn = init_db(tmp_path / "winnow.db")
     repo = CoverageRepository(conn)
-    fixture = generate_coverage_matrix(num_tests=5, num_files=3, seed=7)
 
+    fixture = generate_coverage_matrix(
+        num_test_files=6, num_files=4, seed=7, cases_per_file=5
+    )
     populate_store(fixture, repo, commit_sha="sha1")
 
-    for test_id, files in fixture.test_to_files.items():
+    expected_rows = sum(len(files) for files in fixture.test_file_to_files.values())
+    assert conn.execute("SELECT COUNT(*) FROM test_coverage").fetchone()[0] == expected_rows
+
+    for test_file, files in fixture.test_file_to_files.items():
         for file_path in files:
-            assert test_id in repo.tests_covering_file(file_path)
+            assert test_file in repo.test_files_covering(file_path)
