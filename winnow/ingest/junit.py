@@ -15,11 +15,11 @@ class JUnitParser(TestResultParser):
         outcomes: list[TestOutcome] = []
         for suite in xml:
             for case in suite:
-                case_id = f"{case.classname}.{case.name}"
+                test_id = f"{case.classname}.{case.name}"
                 passed = not any(isinstance(r, (Failure, Error)) for r in case.result)
                 outcomes.append(
                     TestOutcome(
-                        case_id=case_id,
+                        test_id=test_id,
                         passed=passed,
                         duration_seconds=case.time or 0.0,
                     )

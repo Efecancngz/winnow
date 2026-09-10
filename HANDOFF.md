@@ -9,17 +9,9 @@ değil ölçümle verildi; toplayıcı mobx üzerinde uçtan uca koştu ve 3 com
 sorunsuz toplandı.
 
 **Seçim birimi kararı da kapatıldı (2026-09-10): birim artık test dosyası.**
-Tasarım [`docs/superpowers/specs/2026-09-10-selection-unit-design.md`](docs/superpowers/specs/2026-09-10-selection-unit-design.md)
-içinde; kod da yazıldı ve `feat/selection-unit` dalında birleştirildi (şema +
-toplayıcı + seçim zinciri + `tools/collect_history.py` /
-`tools/analyze_history.py` uyarlaması). Suite 92 test, hepsi yeşil.
-GitHub'da PR #2 açık (`feat/selection-unit` → `feat/history-collector`).
-
-**Gerçek veriyle doğrulama koşuldu (2026-09-10).** Tahmin tutmadı:
-~0,9 MB/commit bekleniyordu, **1,368 MB/commit** ölçüldü — kazanç 26 kat
-değil **16,7 kat**. Ayrıntı ve sebep aşağıda "Gerçek veriyle doğrulama"
-bölümünde. Boyut tarafı doğrulandı, **seçim çıktısının önce/sonra
-karşılaştırması yapılamadı** (eski veritabanı silindi).
+Tasarım yazıldı, kod henüz yazılmadı — bkz.
+[`docs/superpowers/specs/2026-09-10-selection-unit-design.md`](docs/superpowers/specs/2026-09-10-selection-unit-design.md).
+Sırada bu tasarımın uygulama planı, sonra **mutasyon tabanlı yer gerçeği**.
 
 ## Backtest deposu: neden mobx
 
@@ -126,7 +118,7 @@ precision/recall yapay olarak şişer.
    "0 test dosyası" olarak kaydedilirdi. `runner.py` (3 çağrı) ve `repo.py`
    (git) artık `encoding="utf-8", errors="replace"` kullanıyor.
 
-Test sayısı 58 → 69, hepsi yeşil (seçim birimi işi + final review düzeltmeleriyle birlikte şu an 92, hepsi yeşil).
+Test sayısı 58 → 69, hepsi yeşil.
 
 ## Seçim birimi kararı (2026-09-10, kapatıldı)
 
@@ -153,85 +145,16 @@ sadece karara götüren argüman:
   dışlanması **minimum gözlem sayısı** koşuluyla yapılacak — Phase 2'deki
   circuit breaker'ın aynı deseni.
 
-**Durum: tasarım uygulandı, kod `feat/selection-unit` dalında birleştirildi.**
-Şema + toplayıcı + seçim zinciri yazıldı, test-önce; final review kusur
-dalgası da kapatıldı (şema-koruma kontrolleri, `relative_posix` hata yakalama,
-`failure_rate` gözlem sayacı düzeltmesi). Suite 82 test, hepsi yeşil.
-**Hâlâ yapılmadı:** 3 mobx commit'inin yeni şemayla yeniden toplanıp
-~0,9 MB/commit tahmininin gerçek veriyle doğrulanması — bkz. madde 1.
-
-## Gerçek veriyle doğrulama (2026-09-10, koşuldu)
-
-3 mobx commit'i yeni şemayla yeniden toplandı: **3/3 commit, 32/32 test
-dosyası, 0 atlama.** Ama asıl sonuç tahminin tutmaması.
-
-| | Önce (2026-09-08) | Tahmin | Ölçülen |
-|---|---|---|---|
-| Veritabanı | 22,8 MB/commit | ~0,9 MB/commit | **1,368 MB/commit** |
-| Kazanç | — | ~26 kat | **16,7 kat** |
-| Commit başına süre | 11,2 dk | — | **5,1 dk** |
-
-### Tahmin neden şaştı
-
-26 kat, tekilleştirmenin `test_coverage` üzerindeki etkisiydi; ben onu
-**tüm veritabanına** uyguladım. Tabloları ayrı ayrı ölçünce ortaya çıkıyor:
-
-| Tablo | MB/commit |
-|---|---|
-| `test_coverage` | 1,178 |
-| `test_outcomes` | 0,248 |
-
-`test_outcomes` **hiçbir zaman kopyalanmıyordu** — case başına bir satır,
-zaten dürüst olan kısım. O 0,248 MB tahminden düşülmemişti. Üstüne bu
-değişiklik iki yeni index ekledi (`idx_test_coverage_file_path`,
-`idx_test_outcomes_test_file`) ve `UNIQUE` kısıtının kendi index'i var;
-üçü de `test_coverage`'ı büyütüyor.
-
-**Ders:** bir oranı tahmine çevirirken oranın *hangi* büyüklüğe ait olduğunu
-korumak gerekiyor. 26 kat doğruydu — yanlış paydaya uygulandı. Ayrıca
-düzeltmenin kendisi yer ekliyordu (indexler), tahmin bunu hiç saymamıştı.
-
-### Beklenmeyen ikinci sonuç: süre yarıya indi
-
-11,2 dk → 5,1 dk/commit. **Sebep ölçülmedi**, ama en güçlü hipotez şu:
-eski kod `add_coverage`'ı case başına çağırıyordu ve her çağrı bir
-`conn.commit()` yapıyor — commit başına ~775 fsync. Artık dosya başına
-çağrılıyor: ~32 fsync. Yani 26 kat kopyalama yalnızca yer değil **zaman**
-da harcıyormuş. Doğrulanmadı; npm/jest önbelleği de sıcaktı. Hipotez olarak
-kayda geçiyor, bulgu olarak değil.
-
-### Hijyen kuralı canlıda doğrulandı
-
-`analyze_history.py`'nin "yer gerçeğinden dışlanan case'ler" bölümü
-**boş döndü** — ve bu doğru davranış. Bilinen üç sürekli kırık test
-(production build gerektirenler) 3 commit'te de başarısız, ama eşik 5
-gözlem. Yani minimum gözlem koşulu tam da tasarlandığı gibi çalışıyor:
-az veriyle "sabit" görünen bir case'i sabit ilan etmiyor.
-
-### İki yeni kusur bulundu (ikisi de bu koşuda ortaya çıktı)
-
-1. **`case_id` iki kez yazılıyor.** jest-junit'te `classname` ile `name`
-   aynı değeri taşıyor, `JUnitParser` ise `f"{classname}.{name}"` üretiyor.
-   Sonuç: `" unbound methods. unbound methods"` — üstelik baştaki boşlukla.
-   Kırıcı değil ama kimlik çirkin ve gereksiz yer kaplıyor.
-2. **`case_id` tek başına benzersiz değil.** Tek bir commit'te 776 satırın
-   yalnızca 724'ü farklı: 52 satır çakışıyor, aynı test adı 3 ayrı test
-   dosyasında geçiyor. Gerçek kimlik `(test_file, case_id)`. Bu, final
-   review'da "teorik" diye işaretlenen `COUNT(*)` → `COUNT(DISTINCT
-   commit_sha)` düzeltmesini **gerçek veriyle haklı çıkarıyor** — çakışma
-   varsayımsal değilmiş.
-
-### Koşulamayan adım
-
-**Seçim çıktısının önce/sonra karşılaştırması yapılamadı.** Eski
-`data/mobx/winnow.db` (2026-09-08 koşusu) bu iş sırasında silindi —
-`data/*/` gitignore'da olduğu için geri alınamıyor. Yani "refactor bilgi
-kaybetmedi" iddiası **doğrulanmadı**; yalnızca boyut tarafı doğrulandı.
-Bir sonraki toplu koşuda yeniden kurulabilir.
+**Durum: tasarım yazıldı, kod yazılmadı.** Sıradaki adım bunun uygulama planı.
 
 ## Sıradaki somut adımlar
 
-1. **Toplayıcıya geçmişte adım atma seçeneği.** Şu an yalnızca "son N commit"
+1. **Seçim birimi tasarımının uygulanması.** Şema + toplayıcı + seçim zinciri,
+   test-önce; sonra 3 mobx commit'i yeniden toplanıp ~0,9 MB/commit doğrulanacak.
+   Riskli nokta: `simulate/generator.py` ve `test_bootstrap_validation.py` eski
+   kimliği konuşuyor — mekanik olarak yeniden adlandırılırsa artık var olmayan
+   bir dünyayı doğrulamaya devam ederler.
+2. **Toplayıcıya geçmişte adım atma seçeneği.** Şu an yalnızca "son N commit"
    toplanabiliyor (`git log main -N --reverse`). Araç zincirinin geçmişte
    nerede kırıldığını ölçmek için (ör. HEAD, HEAD~50, HEAD~200) aralık/adım
    desteği gerekiyor. Bugünkü 3 commit'lik koşu kablolamayı doğruladı ama
