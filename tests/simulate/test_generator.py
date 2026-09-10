@@ -1,7 +1,8 @@
+import sqlite3
 from pathlib import Path
 
-from winnow.simulate.generator import generate_coverage_matrix, populate_store
-from winnow.store.repository import CoverageRepository
+from winnow.simulate.generator import case_ids, generate_coverage_matrix, populate_store
+from winnow.store.repository import CoverageRepository, TestOutcomeRepository
 from winnow.store.schema import init_db
 
 
@@ -33,3 +34,51 @@ def test_populate_store_writes_one_coverage_row_per_test_file_and_source_file(
     for test_file, files in fixture.test_file_to_files.items():
         for file_path in files:
             assert test_file in repo.test_files_covering(file_path)
+
+
+def test_case_ids_derives_stem_from_test_file_path():
+    fixture = generate_coverage_matrix(num_test_files=3, num_files=2, seed=1, cases_per_file=4)
+
+    ids = case_ids(fixture, "test/t_1.test.js")
+
+    assert ids == ("t_1.case_0", "t_1.case_1", "t_1.case_2", "t_1.case_3")
+
+
+def test_populate_store_writes_cases_per_file_outcomes_per_test_file(tmp_path: Path):
+    """cases_per_file must be observable: several JUnit-style cases share one
+    Jest test file in the real data, so writing outcomes must scale with
+    cases_per_file. This fails if cases_per_file were hardcoded to 1."""
+    db_path = tmp_path / "winnow.db"
+    conn = init_db(db_path)
+    coverage_repo = CoverageRepository(conn)
+    outcome_repo = TestOutcomeRepository(conn)
+
+    fixture = generate_coverage_matrix(
+        num_test_files=4, num_files=3, seed=7, cases_per_file=5
+    )
+    populate_store(fixture, coverage_repo, commit_sha="sha1", outcome_repo=outcome_repo)
+
+    raw_conn = sqlite3.connect(db_path)
+    try:
+        for test_file in fixture.test_files:
+            rows = raw_conn.execute(
+                "SELECT case_id FROM test_outcomes WHERE test_file = ?",
+                (test_file,),
+            ).fetchall()
+            case_id_values = [row[0] for row in rows]
+
+            assert len(case_id_values) == fixture.cases_per_file
+            assert len(set(case_id_values)) == fixture.cases_per_file
+            assert set(case_id_values) == set(case_ids(fixture, test_file))
+    finally:
+        raw_conn.close()
+
+    # Coverage rows stay one per (test file, source file), independent of
+    # cases_per_file -- writing per-case outcomes must not change this.
+    expected_coverage_rows = sum(
+        len(files) for files in fixture.test_file_to_files.values()
+    )
+    assert (
+        conn.execute("SELECT COUNT(*) FROM test_coverage").fetchone()[0]
+        == expected_coverage_rows
+    )

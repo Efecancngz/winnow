@@ -1,8 +1,8 @@
 import random
 from dataclasses import dataclass
 
-from winnow.ingest.models import CoverageReport, FileCoverage
-from winnow.store.repository import CoverageRepository
+from winnow.ingest.models import CoverageReport, FileCoverage, TestOutcome
+from winnow.store.repository import CoverageRepository, TestOutcomeRepository
 
 
 @dataclass(frozen=True)
@@ -46,7 +46,10 @@ def case_ids(fixture: SyntheticFixture, test_file: str) -> tuple[str, ...]:
 
 
 def populate_store(
-    fixture: SyntheticFixture, coverage_repo: CoverageRepository, commit_sha: str
+    fixture: SyntheticFixture,
+    coverage_repo: CoverageRepository,
+    commit_sha: str,
+    outcome_repo: TestOutcomeRepository | None = None,
 ) -> None:
     for test_file, files in fixture.test_file_to_files.items():
         report = CoverageReport(
@@ -55,3 +58,10 @@ def populate_store(
             )
         )
         coverage_repo.add_coverage(commit_sha, test_file, report)
+
+        if outcome_repo is not None:
+            outcomes = [
+                TestOutcome(case_id=case_id, passed=True, duration_seconds=0.1)
+                for case_id in case_ids(fixture, test_file)
+            ]
+            outcome_repo.add_outcomes(commit_sha, test_file, outcomes)
