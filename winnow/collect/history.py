@@ -81,6 +81,13 @@ def collect_history(
                 logger.warning("skipping file %s in commit %s: %s", test_file, sha, reason)
                 continue
 
+            try:
+                test_file_id = relative_posix(clone_dest, test_file)
+            except ValueError as e:
+                skipped_files.append((sha, test_file, str(e)))
+                logger.warning("skipping file %s in commit %s: %s", test_file, sha, str(e))
+                continue
+
             coverage_report = cobertura_parser.parse(run_result.coverage_path)
             outcomes = junit_parser.parse(run_result.junit_path)
 
@@ -89,7 +96,6 @@ def collect_history(
             # never collected -- and cost 26x the space saying it. Written
             # before the outcome check so an all-skipped file still records
             # what it covered.
-            test_file_id = relative_posix(clone_dest, test_file)
             coverage_repo.add_coverage(sha, test_file_id, coverage_report)
             outcome_repo.add_outcomes(sha, test_file_id, outcomes)
             any_file_succeeded = True

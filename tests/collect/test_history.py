@@ -247,6 +247,50 @@ def test_collect_history_skips_individual_failed_test_file_but_keeps_commit(tmp_
     assert coverage_repo.test_files_covering("src/a.ts") == {"src/good.test.ts"}
 
 
+def test_a_test_file_outside_the_repo_root_is_skipped_not_fatal(tmp_path: Path):
+    """relative_posix raises ValueError for a path outside clone_dest. Every
+    other per-file failure is recorded in skipped_files and the run
+    continues -- this one must not abort the whole collection either."""
+    commit_repo, coverage_repo, outcome_repo = _repos(tmp_path)
+    clone_dest = tmp_path / "repo"
+    # Deliberately outside clone_dest, so relative_posix(clone_dest, ...)
+    # raises ValueError instead of returning a relative path.
+    outside_test_file = str(tmp_path / "elsewhere" / "a.test.ts")
+
+    def fake_run_tests_for_file(repo_path, test_file, output_dir, reporter_path):
+        _write_fixture_reports(output_dir)
+        return RunResult(
+            output_dir / "cobertura-coverage.xml", output_dir / "junit.xml", skipped=False
+        )
+
+    result = collect_history(
+        repo_url="https://example.invalid/repo.git",
+        clone_dest=clone_dest,
+        output_root=tmp_path / "out",
+        jest_junit_reporter_path=Path("/fake/jest-junit"),
+        commit_repo=commit_repo,
+        coverage_repo=coverage_repo,
+        outcome_repo=outcome_repo,
+        num_commits=1,
+        ensure_cloned=lambda repo_url, dest: None,
+        list_last_n_commits=lambda repo_path, n: ["sha1"],
+        checkout=lambda repo_path, sha: None,
+        commit_date=lambda repo_path, sha: "2026-08-01T00:00:00+00:00",
+        install=lambda repo_path: InstallResult(succeeded=True),
+        list_test_files=lambda repo_path: [outside_test_file],
+        run_tests_for_file=fake_run_tests_for_file,
+    )
+
+    # The commit is not "collected" (no file succeeded), but the run itself
+    # must not raise -- and the failure is recorded, not silently dropped.
+    assert result.collected == ()
+    assert len(result.skipped_files) == 1
+    sha, test_file, reason = result.skipped_files[0]
+    assert sha == "sha1"
+    assert test_file == outside_test_file
+    assert "outside repo root" in reason
+
+
 def _fixture_reports_with_many_cases(output_dir: Path, num_cases: int) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "cobertura-coverage.xml").write_text(
