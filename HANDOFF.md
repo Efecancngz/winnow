@@ -1,13 +1,17 @@
 # Handoff — Winnow
 
-Son güncelleme: 2026-09-08, güncelleyen: Claude Opus 5
+Son güncelleme: 2026-09-10, güncelleyen: Claude Opus 5
 
 ## Şu an ne yapılıyor
 
 Backtest deposu kararı **kapatıldı: mobx** (`packages/mobx`). Karar tahminle
 değil ölçümle verildi; toplayıcı mobx üzerinde uçtan uca koştu ve 3 commit
-sorunsuz toplandı. Sırada **mutasyon tabanlı yer gerçeği** ve ondan önce
-**seçim birimi kararı** var (aşağıda).
+sorunsuz toplandı.
+
+**Seçim birimi kararı da kapatıldı (2026-09-10): birim artık test dosyası.**
+Tasarım yazıldı, kod henüz yazılmadı — bkz.
+[`docs/superpowers/specs/2026-09-10-selection-unit-design.md`](docs/superpowers/specs/2026-09-10-selection-unit-design.md).
+Sırada bu tasarımın uygulama planı, sonra **mutasyon tabanlı yer gerçeği**.
 
 ## Backtest deposu: neden mobx
 
@@ -116,18 +120,40 @@ precision/recall yapay olarak şişer.
 
 Test sayısı 58 → 69, hepsi yeşil.
 
+## Seçim birimi kararı (2026-09-10, kapatıldı)
+
+**Karar: Winnow'un seçim birimi test dosyası.** Tam gerekçe ve şema
+`docs/superpowers/specs/2026-09-10-selection-unit-design.md` içinde; burada
+sadece karara götüren argüman:
+
+- **İki ayrı eksen var, önceki notta birbirine karışmıştı.** *Kaynak tarafı*
+  (diff'i dosyayla mı satırla mı eşle) 2026-09-08'de satır seviyesi olarak
+  kapandı. *Test tarafı* (seçilen ve skorlanan şey case mi dosya mı) bu
+  karardı. Bağımsızlar; seçilen bileşim **satır × dosya**.
+- **Belirleyici olan maliyet birimi, disk değil.** `api.js` (2 test) ve
+  `observables.js` (88 test) ikisi de ~17–19 sn — maliyet Jest'in dosya başına
+  başlatması. 88 testin 3'ünü seçmek hiçbir şey kazandırmaz. **Maliyet
+  biriminden ince bir seçim birimi, tanımı gereği tasarruf üretemez.** Per-case
+  attribution bedava ve kusursuz olsaydı bile CI kazancı sıfır ölçülürdü.
+- 26 kat şişkinliğin gitmesi bu kararın *sonucu*, gerekçesi değil. İleride
+  "depolama optimizasyonu" diye okunmamalı.
+- Reddedilenler: gerçek per-case attribution toplamak (~3,7 sa/commit, ~25 kat,
+  ve `-t` modülün tamamını yüklediği için hâlâ kısmen sahte) ve kimliği koruyup
+  sadece depolamayı normalize etmek (aynı yalan, daha büyük şema).
+- `test_outcomes` case seviyesinde kalıyor (`case_id`), `test_file` sütunu
+  ekleniyor; `failure_rate` dosyaya yuvarlanıyor. Sürekli kırık testlerin
+  dışlanması **minimum gözlem sayısı** koşuluyla yapılacak — Phase 2'deki
+  circuit breaker'ın aynı deseni.
+
+**Durum: tasarım yazıldı, kod yazılmadı.** Sıradaki adım bunun uygulama planı.
+
 ## Sıradaki somut adımlar
 
-1. **Seçim birimi kararı (önce bu).** Coverage her *test case* için ayrı
-   saklanıyor, ama Jest coverage'ı *test dosyası* başına üretiyor:
-   `observables.js`'in 88 testi aynı veriyi 88 kez saklıyor. Ölçüldü:
-   22,8 MB/commit, olması gereken ~0,9 MB — **~26 kat şişkinlik.** Asıl sorun
-   yer değil: şema, hiç toplanmamış bir per-test attribution iddia ediyor.
-   Düzeltmek `test_id`'nin anlamını değiştirmek demek ve o kimlik
-   `must_run_tests` → `SelectionPipeline` → `RiskScorer` → `failure_rate`
-   zincirinin tamamından geçiyor. Yani bu bir optimizasyon değil, **Winnow'un
-   seçim birimini test'ten test dosyasına taşıma kararı** — 2. bulgunun açtığı
-   tasarım sorusu. Kendi tasarım turunu hak ediyor.
+1. **Seçim birimi tasarımının uygulanması.** Şema + toplayıcı + seçim zinciri,
+   test-önce; sonra 3 mobx commit'i yeniden toplanıp ~0,9 MB/commit doğrulanacak.
+   Riskli nokta: `simulate/generator.py` ve `test_bootstrap_validation.py` eski
+   kimliği konuşuyor — mekanik olarak yeniden adlandırılırsa artık var olmayan
+   bir dünyayı doğrulamaya devam ederler.
 2. **Toplayıcıya geçmişte adım atma seçeneği.** Şu an yalnızca "son N commit"
    toplanabiliyor (`git log main -N --reverse`). Araç zincirinin geçmişte
    nerede kırıldığını ölçmek için (ör. HEAD, HEAD~50, HEAD~200) aralık/adım
