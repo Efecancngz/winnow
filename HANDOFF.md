@@ -9,9 +9,12 @@ değil ölçümle verildi; toplayıcı mobx üzerinde uçtan uca koştu ve 3 com
 sorunsuz toplandı.
 
 **Seçim birimi kararı da kapatıldı (2026-09-10): birim artık test dosyası.**
-Tasarım yazıldı, kod henüz yazılmadı — bkz.
-[`docs/superpowers/specs/2026-09-10-selection-unit-design.md`](docs/superpowers/specs/2026-09-10-selection-unit-design.md).
-Sırada bu tasarımın uygulama planı, sonra **mutasyon tabanlı yer gerçeği**.
+Tasarım [`docs/superpowers/specs/2026-09-10-selection-unit-design.md`](docs/superpowers/specs/2026-09-10-selection-unit-design.md)
+içinde; kod da yazıldı ve `feat/selection-unit` dalında birleştirildi (şema +
+toplayıcı + seçim zinciri + `tools/collect_history.py` /
+`tools/analyze_history.py` uyarlaması). Suite 82 test, hepsi yeşil. **Hâlâ
+yapılmadı:** 3 mobx commit'inin yeni şemayla yeniden toplanıp ~0,9 MB/commit
+tahmininin gerçek veriyle doğrulanması — bkz. "Sıradaki somut adımlar".
 
 ## Backtest deposu: neden mobx
 
@@ -118,7 +121,7 @@ precision/recall yapay olarak şişer.
    "0 test dosyası" olarak kaydedilirdi. `runner.py` (3 çağrı) ve `repo.py`
    (git) artık `encoding="utf-8", errors="replace"` kullanıyor.
 
-Test sayısı 58 → 69, hepsi yeşil.
+Test sayısı 58 → 69, hepsi yeşil (seçim birimi işiyle birlikte şu an 82, hepsi yeşil).
 
 ## Seçim birimi kararı (2026-09-10, kapatıldı)
 
@@ -145,12 +148,18 @@ sadece karara götüren argüman:
   dışlanması **minimum gözlem sayısı** koşuluyla yapılacak — Phase 2'deki
   circuit breaker'ın aynı deseni.
 
-**Durum: tasarım yazıldı, kod yazılmadı.** Sıradaki adım bunun uygulama planı.
+**Durum: tasarım uygulandı, kod `feat/selection-unit` dalında birleştirildi.**
+Şema + toplayıcı + seçim zinciri yazıldı, test-önce; final review kusur
+dalgası da kapatıldı (şema-koruma kontrolleri, `relative_posix` hata yakalama,
+`failure_rate` gözlem sayacı düzeltmesi). Suite 82 test, hepsi yeşil.
+**Hâlâ yapılmadı:** 3 mobx commit'inin yeni şemayla yeniden toplanıp
+~0,9 MB/commit tahmininin gerçek veriyle doğrulanması — bkz. madde 1.
 
 ## Sıradaki somut adımlar
 
-1. **Seçim birimi tasarımının uygulanması.** Şema + toplayıcı + seçim zinciri,
-   test-önce; sonra 3 mobx commit'i yeniden toplanıp ~0,9 MB/commit doğrulanacak.
+1. **Gerçek veriyle doğrulama.** 3 mobx commit'i yeni şemayla yeniden
+   toplanıp ~0,9 MB/commit tahmini gerçek veriyle doğrulanacak. Bu adım
+   henüz **yapılmadı**.
    Riskli nokta: `simulate/generator.py` ve `test_bootstrap_validation.py` eski
    kimliği konuşuyor — mekanik olarak yeniden adlandırılırsa artık var olmayan
    bir dünyayı doğrulamaya devam ederler.
