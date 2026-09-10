@@ -5,6 +5,7 @@ import pytest
 
 from winnow.ingest.models import CoverageReport, FileCoverage, TestOutcome
 from winnow.store.repository import (
+    PERMANENT_FAILURE_MIN_OBSERVATIONS,
     CommitRepository,
     CoverageRepository,
     TestOutcomeRepository,
@@ -14,6 +15,14 @@ from winnow.store.schema import init_db
 
 def _conn(tmp_path: Path):
     return init_db(tmp_path / "winnow.db")
+
+
+def _record(repo, sha: str, test_file: str, cases: dict[str, bool]) -> None:
+    repo.add_outcomes(
+        sha,
+        test_file,
+        [TestOutcome(c, passed=p, duration_seconds=0.1) for c, p in cases.items()],
+    )
 
 
 def test_commit_repository_add_and_get_recent(tmp_path: Path):
@@ -113,6 +122,49 @@ def test_failure_rate_is_zero_for_an_unknown_file(tmp_path: Path):
     repo = TestOutcomeRepository(_conn(tmp_path))
 
     assert repo.failure_rate("test/never-seen.test.js") == 0.0
+
+
+def test_a_permanently_failing_case_is_excluded_from_the_file_failure_rate(tmp_path: Path):
+    """mobx has three cases that fail in every commit because they need a
+    production build. Counted, they pin their whole file at 1.0 forever."""
+    repo = TestOutcomeRepository(_conn(tmp_path))
+
+    for i in range(PERMANENT_FAILURE_MIN_OBSERVATIONS):
+        _record(
+            repo,
+            f"sha{i}",
+            "test/a.test.js",
+            {"a.always_broken": False, "a.healthy": True},
+        )
+
+    # every commit "failed", but only because of the constant case
+    assert repo.failure_rate("test/a.test.js") == 0.0
+
+
+def test_a_real_failure_still_counts_when_a_constant_case_is_excluded(tmp_path: Path):
+    repo = TestOutcomeRepository(_conn(tmp_path))
+
+    for i in range(PERMANENT_FAILURE_MIN_OBSERVATIONS):
+        healthy_passed = i != 0  # genuinely broke at sha0 only
+        _record(
+            repo,
+            f"sha{i}",
+            "test/a.test.js",
+            {"a.always_broken": False, "a.healthy": healthy_passed},
+        )
+
+    assert repo.failure_rate("test/a.test.js") == 1 / PERMANENT_FAILURE_MIN_OBSERVATIONS
+
+
+def test_below_the_observation_floor_nothing_is_excluded(tmp_path: Path):
+    """With 3 commits collected every case looks constant. An unguarded rule
+    would throw away the whole dataset."""
+    repo = TestOutcomeRepository(_conn(tmp_path))
+
+    for i in range(3):
+        _record(repo, f"sha{i}", "test/a.test.js", {"a.looks_constant": False})
+
+    assert repo.failure_rate("test/a.test.js", min_observations=5) == 1.0
 
 
 def test_all_test_files(tmp_path: Path):

@@ -2,6 +2,12 @@ import sqlite3
 
 from winnow.ingest.models import CoverageReport, TestOutcome
 
+# A case is only judged "permanently failing" once there is enough history to
+# tell constancy from coincidence. At 3 collected commits every case looks
+# constant, so an unguarded rule deletes the dataset. Same shape as the Phase 2
+# circuit breaker: a rate over a minimum sample, never N-in-a-row.
+PERMANENT_FAILURE_MIN_OBSERVATIONS = 5
+
 
 class CommitRepository:
     def __init__(self, conn: sqlite3.Connection):
@@ -91,7 +97,11 @@ class TestOutcomeRepository:
         )
         self._conn.commit()
 
-    def failure_rate(self, test_file: str) -> float:
+    def failure_rate(
+        self,
+        test_file: str,
+        min_observations: int = PERMANENT_FAILURE_MIN_OBSERVATIONS,
+    ) -> float:
         """Fraction of commits in which this file had at least one failing case.
 
         Not the fraction of failing case-runs: a file with one permanently
@@ -99,18 +109,40 @@ class TestOutcomeRepository:
         indistinguishable from a healthy file. The question the scorer asks is
         "is it worth running this file", so the label is "did running it
         surface a failure".
+
+        Cases that have never passed across at least `min_observations`
+        commits are excluded before the roll-up: they are constant, not
+        signal, and would otherwise pin the whole file at 1.0 forever.
         """
+        excluded = self._permanently_failing_cases(test_file, min_observations)
+
         rows = self._conn.execute(
-            """SELECT commit_sha, MIN(passed)
-               FROM test_outcomes
-               WHERE test_file = ?
-               GROUP BY commit_sha""",
+            "SELECT commit_sha, case_id, passed FROM test_outcomes WHERE test_file = ?",
             (test_file,),
         ).fetchall()
         if not rows:
             return 0.0
-        failed_commits = sum(1 for (_sha, min_passed) in rows if min_passed == 0)
-        return failed_commits / len(rows)
+
+        commits: dict[str, bool] = {}
+        for commit_sha, case_id, passed in rows:
+            if case_id in excluded:
+                continue
+            commits[commit_sha] = commits.get(commit_sha, False) or passed == 0
+
+        if not commits:
+            return 0.0
+        return sum(1 for failed in commits.values() if failed) / len(commits)
+
+    def _permanently_failing_cases(self, test_file: str, min_observations: int) -> set[str]:
+        rows = self._conn.execute(
+            """SELECT case_id
+               FROM test_outcomes
+               WHERE test_file = ?
+               GROUP BY case_id
+               HAVING COUNT(*) >= ? AND MAX(passed) = 0""",
+            (test_file, min_observations),
+        ).fetchall()
+        return {row[0] for row in rows}
 
     def all_test_files(self) -> set[str]:
         rows = self._conn.execute("SELECT DISTINCT test_file FROM test_outcomes").fetchall()
