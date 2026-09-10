@@ -15,6 +15,11 @@ class CoberturaParser(CoverageParser):
             filename = class_el.get("filename")
             if filename is None:
                 continue
+            # Jest's cobertura reporter emits the host separator; on Windows
+            # that is a backslash, while git diffs are always posix. Storing
+            # the raw form makes every lookup miss silently: the selector
+            # falls back to the full suite and reports success.
+            filename = filename.replace(chr(92), "/")
             covered = files.setdefault(filename, set())
             lines_el = class_el.find("lines")
             if lines_el is None:

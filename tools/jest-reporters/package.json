@@ -1,0 +1,9 @@
+{
+  "name": "winnow-jest-reporters",
+  "private": true,
+  "version": "1.0.0",
+  "description": "jest-junit installed once and referenced by absolute path from history-collected ts-pattern checkouts, so ts-pattern's own package.json is never touched.",
+  "devDependencies": {
+    "jest-junit": "^16.0.0"
+  }
+}
