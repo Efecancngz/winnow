@@ -12,8 +12,8 @@ class StubRiskScorer(RiskScorer):
     def __init__(self, scores: dict[str, float]):
         self._scores = scores
 
-    def score(self, test_id: str, changed_files: frozenset[str]) -> float:
-        return self._scores.get(test_id, 0.0)
+    def score(self, test_file: str, changed_files: frozenset[str]) -> float:
+        return self._scores.get(test_file, 0.0)
 
 
 def _repos(tmp_path: Path):
@@ -21,55 +21,57 @@ def _repos(tmp_path: Path):
     return CoverageRepository(conn), TestOutcomeRepository(conn)
 
 
-def test_pipeline_includes_direct_coverage_and_high_risk_tests(tmp_path: Path):
+def test_pipeline_includes_direct_coverage_and_high_risk_test_files(tmp_path: Path):
     coverage_repo, outcome_repo = _repos(tmp_path)
 
     coverage_repo.add_coverage(
-        "sha1", "test_direct", CoverageReport(files=(FileCoverage("a.py", frozenset({1})),))
+        "sha1", "test/direct.test.js", CoverageReport(files=(FileCoverage("a.py", frozenset({1})),))
     )
     outcome_repo.add_outcomes(
-        "sha1",
-        [
-            TestOutcome("test_direct", passed=True, duration_seconds=0.1),
-            TestOutcome("test_risky", passed=True, duration_seconds=0.1),
-            TestOutcome("test_irrelevant", passed=True, duration_seconds=0.1),
-        ],
+        "sha1", "test/direct.test.js", [TestOutcome("direct.works", passed=True, duration_seconds=0.1)]
+    )
+    outcome_repo.add_outcomes(
+        "sha1", "test/risky.test.js", [TestOutcome("risky.works", passed=True, duration_seconds=0.1)]
+    )
+    outcome_repo.add_outcomes(
+        "sha1", "test/irrelevant.test.js", [TestOutcome("irr.works", passed=True, duration_seconds=0.1)]
     )
 
-    scorer = StubRiskScorer({"test_direct": 0.2, "test_risky": 0.9, "test_irrelevant": 0.1})
+    scorer = StubRiskScorer(
+        {"test/direct.test.js": 0.2, "test/risky.test.js": 0.9, "test/irrelevant.test.js": 0.1}
+    )
     pipeline = SelectionPipeline(coverage_repo, outcome_repo, scorer, risk_threshold=0.5)
 
     result = pipeline.run(Diff(changed_files=(ChangedFile(path="a.py"),)))
 
-    ids_and_reasons = {r.test_id: r.reason for r in result.selected_tests}
-    assert ids_and_reasons["test_direct"] == "direct coverage overlap"
-    assert ids_and_reasons["test_risky"] == "risk score above threshold"
-    assert "test_irrelevant" not in ids_and_reasons
+    files_and_reasons = {r.test_file: r.reason for r in result.selected_tests}
+    assert files_and_reasons["test/direct.test.js"] == "direct coverage overlap"
+    assert files_and_reasons["test/risky.test.js"] == "risk score above threshold"
+    assert "test/irrelevant.test.js" not in files_and_reasons
 
 
 def test_pipeline_ranks_by_risk_score_descending(tmp_path: Path):
     coverage_repo, outcome_repo = _repos(tmp_path)
 
     coverage_repo.add_coverage(
-        "sha1", "test_low", CoverageReport(files=(FileCoverage("a.py", frozenset({1})),))
+        "sha1", "test/low.test.js", CoverageReport(files=(FileCoverage("a.py", frozenset({1})),))
     )
     coverage_repo.add_coverage(
-        "sha1", "test_high", CoverageReport(files=(FileCoverage("a.py", frozenset({1})),))
+        "sha1", "test/high.test.js", CoverageReport(files=(FileCoverage("a.py", frozenset({1})),))
     )
     outcome_repo.add_outcomes(
-        "sha1",
-        [
-            TestOutcome("test_low", passed=True, duration_seconds=0.1),
-            TestOutcome("test_high", passed=True, duration_seconds=0.1),
-        ],
+        "sha1", "test/low.test.js", [TestOutcome("low.works", passed=True, duration_seconds=0.1)]
+    )
+    outcome_repo.add_outcomes(
+        "sha1", "test/high.test.js", [TestOutcome("high.works", passed=True, duration_seconds=0.1)]
     )
 
-    scorer = StubRiskScorer({"test_low": 0.1, "test_high": 0.8})
+    scorer = StubRiskScorer({"test/low.test.js": 0.1, "test/high.test.js": 0.8})
     pipeline = SelectionPipeline(coverage_repo, outcome_repo, scorer)
 
     result = pipeline.run(Diff(changed_files=(ChangedFile(path="a.py"),)))
 
-    assert [r.test_id for r in result.selected_tests] == ["test_high", "test_low"]
+    assert [r.test_file for r in result.selected_tests] == ["test/high.test.js", "test/low.test.js"]
 
 
 def test_pipeline_surfaces_full_suite_fallback(tmp_path: Path):

@@ -14,6 +14,6 @@ class CoverageReport:
 
 @dataclass(frozen=True)
 class TestOutcome:
-    test_id: str
+    case_id: str
     passed: bool
     duration_seconds: float
