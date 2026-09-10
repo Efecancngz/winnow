@@ -22,3 +22,4 @@ def test_test_outcome_carries_the_case_identity():
 
     assert outcome.case_id == "a.test.foo"
     assert outcome.passed is False
+    assert outcome.duration_seconds == 0.42

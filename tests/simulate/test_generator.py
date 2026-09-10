@@ -14,6 +14,25 @@ def test_generated_fixture_maps_test_files_to_source_files():
     assert set(fixture.test_file_to_files) == set(fixture.test_files)
 
 
+def test_generate_coverage_matrix_is_deterministic_for_the_same_seed():
+    """The bootstrap recall test relies on the synthetic world being
+    reproducible: the same seed must produce the same test-file -> source-file
+    mapping every time, not just the same shape."""
+    a = generate_coverage_matrix(num_test_files=8, num_files=5, seed=13)
+    b = generate_coverage_matrix(num_test_files=8, num_files=5, seed=13)
+
+    assert a.test_file_to_files == b.test_file_to_files
+
+
+def test_every_generated_test_file_covers_at_least_one_source_file():
+    """A test file mapped to zero source files would be unreachable by any
+    coverage-based selector and silently invisible to recall measurement."""
+    fixture = generate_coverage_matrix(num_test_files=10, num_files=5, seed=7)
+
+    for test_file in fixture.test_files:
+        assert len(fixture.test_file_to_files[test_file]) >= 1
+
+
 def test_populate_store_writes_one_coverage_row_per_test_file_and_source_file(
     tmp_path: Path,
 ):
