@@ -134,12 +134,16 @@ class TestOutcomeRepository:
         return sum(1 for failed in commits.values() if failed) / len(commits)
 
     def _permanently_failing_cases(self, test_file: str, min_observations: int) -> set[str]:
+        # COUNT(DISTINCT commit_sha), not COUNT(*): test_outcomes carries no
+        # uniqueness constraint, so duplicate rows for the same case within
+        # one commit must not let it reach the observation floor early.
+        # "Observations" means commits the case was seen in, per the spec.
         rows = self._conn.execute(
             """SELECT case_id
                FROM test_outcomes
                WHERE test_file = ?
                GROUP BY case_id
-               HAVING COUNT(*) >= ? AND MAX(passed) = 0""",
+               HAVING COUNT(DISTINCT commit_sha) >= ? AND MAX(passed) = 0""",
             (test_file, min_observations),
         ).fetchall()
         return {row[0] for row in rows}

@@ -167,6 +167,22 @@ def test_below_the_observation_floor_nothing_is_excluded(tmp_path: Path):
     assert repo.failure_rate("test/a.test.js", min_observations=5) == 1.0
 
 
+def test_permanently_failing_case_floor_counts_distinct_commits_not_rows(tmp_path: Path):
+    """test_outcomes has no uniqueness constraint, so duplicate rows for the
+    same case within one commit must not reach the observation floor early.
+    Only 2 distinct commits are observed here even though 6 rows exist."""
+    repo = TestOutcomeRepository(_conn(tmp_path))
+
+    for i in range(2):
+        for _ in range(3):
+            _record(repo, f"sha{i}", "test/a.test.js", {"a.always_broken": False})
+
+    # 6 rows >= PERMANENT_FAILURE_MIN_OBSERVATIONS(5) if counted by row, but
+    # only 2 distinct commits -- below the floor, so the case is NOT excluded
+    # and both (duplicated) commits count as failing.
+    assert repo.failure_rate("test/a.test.js", min_observations=5) == 1.0
+
+
 def test_all_test_files(tmp_path: Path):
     repo = TestOutcomeRepository(_conn(tmp_path))
 
