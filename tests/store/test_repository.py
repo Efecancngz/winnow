@@ -83,25 +83,46 @@ def test_same_source_file_may_be_covered_by_several_test_files(tmp_path: Path):
     assert repo.test_files_covering("module_a.py") == {"test/a.test.js", "test/b.test.js"}
 
 
-def test_test_outcome_repository_failure_rate(tmp_path: Path):
+def test_failure_rate_counts_commits_where_the_file_had_any_failing_case(tmp_path: Path):
     repo = TestOutcomeRepository(_conn(tmp_path))
 
-    repo.add_outcomes("sha1", [TestOutcome("test_a", passed=False, duration_seconds=0.1)])
-    repo.add_outcomes("sha2", [TestOutcome("test_a", passed=True, duration_seconds=0.1)])
-
-    assert repo.failure_rate("test_a") == 0.5
-    assert repo.failure_rate("test_unknown") == 0.0
-
-
-def test_test_outcome_repository_all_test_ids(tmp_path: Path):
-    repo = TestOutcomeRepository(_conn(tmp_path))
-
+    # sha1: one of two cases fails -> the file failed at sha1
     repo.add_outcomes(
         "sha1",
+        "test/a.test.js",
         [
-            TestOutcome("test_a", passed=True, duration_seconds=0.1),
-            TestOutcome("test_b", passed=True, duration_seconds=0.1),
+            TestOutcome("a.test.works", passed=True, duration_seconds=0.1),
+            TestOutcome("a.test.broken", passed=False, duration_seconds=0.1),
+        ],
+    )
+    # sha2: both pass -> the file did not fail at sha2
+    repo.add_outcomes(
+        "sha2",
+        "test/a.test.js",
+        [
+            TestOutcome("a.test.works", passed=True, duration_seconds=0.1),
+            TestOutcome("a.test.broken", passed=True, duration_seconds=0.1),
         ],
     )
 
-    assert repo.all_test_ids() == {"test_a", "test_b"}
+    # 1 failing commit out of 2 -- NOT 1 failing case out of 4 (0.25)
+    assert repo.failure_rate("test/a.test.js") == 0.5
+
+
+def test_failure_rate_is_zero_for_an_unknown_file(tmp_path: Path):
+    repo = TestOutcomeRepository(_conn(tmp_path))
+
+    assert repo.failure_rate("test/never-seen.test.js") == 0.0
+
+
+def test_all_test_files(tmp_path: Path):
+    repo = TestOutcomeRepository(_conn(tmp_path))
+
+    repo.add_outcomes(
+        "sha1", "test/a.test.js", [TestOutcome("a.works", passed=True, duration_seconds=0.1)]
+    )
+    repo.add_outcomes(
+        "sha1", "test/b.test.js", [TestOutcome("b.works", passed=True, duration_seconds=0.1)]
+    )
+
+    assert repo.all_test_files() == {"test/a.test.js", "test/b.test.js"}

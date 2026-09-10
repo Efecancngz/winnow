@@ -77,27 +77,41 @@ class TestOutcomeRepository:
     def __init__(self, conn: sqlite3.Connection):
         self._conn = conn
 
-    def add_outcomes(self, commit_sha: str, outcomes: list[TestOutcome]) -> None:
+    def add_outcomes(
+        self, commit_sha: str, test_file: str, outcomes: list[TestOutcome]
+    ) -> None:
         self._conn.executemany(
-            """INSERT INTO test_outcomes (commit_sha, test_id, passed, duration_seconds)
-               VALUES (?, ?, ?, ?)""",
+            """INSERT INTO test_outcomes
+                   (commit_sha, test_file, case_id, passed, duration_seconds)
+               VALUES (?, ?, ?, ?, ?)""",
             [
-                (commit_sha, o.test_id, int(o.passed), o.duration_seconds)
+                (commit_sha, test_file, o.case_id, int(o.passed), o.duration_seconds)
                 for o in outcomes
             ],
         )
         self._conn.commit()
 
-    def failure_rate(self, test_id: str) -> float:
+    def failure_rate(self, test_file: str) -> float:
+        """Fraction of commits in which this file had at least one failing case.
+
+        Not the fraction of failing case-runs: a file with one permanently
+        broken case out of 88 would score 0.011 under that definition and be
+        indistinguishable from a healthy file. The question the scorer asks is
+        "is it worth running this file", so the label is "did running it
+        surface a failure".
+        """
         rows = self._conn.execute(
-            "SELECT passed FROM test_outcomes WHERE test_id = ?",
-            (test_id,),
+            """SELECT commit_sha, MIN(passed)
+               FROM test_outcomes
+               WHERE test_file = ?
+               GROUP BY commit_sha""",
+            (test_file,),
         ).fetchall()
         if not rows:
             return 0.0
-        failures = sum(1 for (passed,) in rows if passed == 0)
-        return failures / len(rows)
+        failed_commits = sum(1 for (_sha, min_passed) in rows if min_passed == 0)
+        return failed_commits / len(rows)
 
-    def all_test_ids(self) -> set[str]:
-        rows = self._conn.execute("SELECT DISTINCT test_id FROM test_outcomes").fetchall()
+    def all_test_files(self) -> set[str]:
+        rows = self._conn.execute("SELECT DISTINCT test_file FROM test_outcomes").fetchall()
         return {row[0] for row in rows}
