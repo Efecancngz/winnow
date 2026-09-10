@@ -45,19 +45,21 @@ def main() -> None:
 
     commits = q1(conn, "SELECT COUNT(*) FROM commits")
     outcomes = q1(conn, "SELECT COUNT(*) FROM test_outcomes")
-    tests = q1(conn, "SELECT COUNT(DISTINCT test_id) FROM test_outcomes")
+    tests = q1(conn, "SELECT COUNT(DISTINCT case_id) FROM test_outcomes")
+    test_files = q1(conn, "SELECT COUNT(DISTINCT test_file) FROM test_outcomes")
     failures = q1(conn, "SELECT COUNT(*) FROM test_outcomes WHERE passed = 0")
     failing_commits = q1(
         conn, "SELECT COUNT(DISTINCT commit_sha) FROM test_outcomes WHERE passed = 0"
     )
     failing_tests = q1(
-        conn, "SELECT COUNT(DISTINCT test_id) FROM test_outcomes WHERE passed = 0"
+        conn, "SELECT COUNT(DISTINCT case_id) FROM test_outcomes WHERE passed = 0"
     )
 
     print("=== collection sanity ===")
     print(f"commits_collected      {commits}")
     print(f"outcome_rows           {outcomes}")
     print(f"distinct_tests         {tests}")
+    print(f"distinct_test_files    {test_files}")
     if commits:
         print(f"tests_per_commit_avg   {outcomes / commits:.1f}")
 
@@ -104,10 +106,19 @@ def main() -> None:
     if failures:
         print()
         print("=== the failures themselves ===")
-        for sha, test_id in conn.execute(
-            "SELECT commit_sha, test_id FROM test_outcomes WHERE passed = 0 LIMIT 20"
+        for sha, test_file, case_id in conn.execute(
+            "SELECT commit_sha, test_file, case_id FROM test_outcomes "
+            "WHERE passed = 0 LIMIT 20"
         ):
-            print(f"  {sha[:8]}  {test_id}")
+            print(f"  {sha[:8]}  {test_file}  {case_id}")
+
+    print()
+    print("=== cases that never pass (excluded from ground truth) ===")
+    for test_file, case_id, n in conn.execute(
+        "SELECT test_file, case_id, COUNT(*) FROM test_outcomes "
+        "GROUP BY test_file, case_id HAVING MAX(passed) = 0 ORDER BY COUNT(*) DESC LIMIT 20"
+    ):
+        print(f"  {test_file}  {case_id}  observations={n}")
 
 
 if __name__ == "__main__":

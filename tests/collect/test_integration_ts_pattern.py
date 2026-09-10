@@ -45,4 +45,4 @@ def test_collect_history_against_real_ts_pattern(tmp_path: Path):
         f"skipped_commits={result.skipped_commits}, skipped_files={result.skipped_files}"
     )
     assert commit_repo.get_recent(2)
-    assert outcome_repo.all_test_ids()
+    assert outcome_repo.all_test_files()
