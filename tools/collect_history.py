@@ -39,7 +39,7 @@ from winnow.store.repository import (  # noqa: E402
     CoverageRepository,
     TestOutcomeRepository,
 )
-from winnow.store.schema import init_db  # noqa: E402
+from winnow.store.schema import ensure_fresh_store, init_db  # noqa: E402
 
 DEFAULT_REPO_URL = "https://github.com/gvergnaud/ts-pattern.git"
 JEST_JUNIT_REPORTER = (
@@ -71,6 +71,11 @@ def main() -> None:
     name = args.repo.rstrip("/").split("/")[-1].removesuffix(".git")
     data_dir = REPO_ROOT / "data" / name
     data_dir.mkdir(parents=True, exist_ok=True)
+
+    # Before any cloning or npm work: collection has no resume feature, so a
+    # stale-schema or already-populated store must fail fast here, not
+    # minutes in after `npm ci` and `--listTests`.
+    ensure_fresh_store(data_dir / "winnow.db")
 
     if not JEST_JUNIT_REPORTER.exists():
         raise SystemExit(

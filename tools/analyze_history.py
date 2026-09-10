@@ -29,6 +29,11 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
+
+from winnow.store.repository import PERMANENT_FAILURE_MIN_OBSERVATIONS  # noqa: E402
+from winnow.store.schema import ensure_current_schema  # noqa: E402
+
 DEFAULT_DB = REPO_ROOT / "data" / "ts-pattern" / "winnow.db"
 
 
@@ -42,6 +47,7 @@ def main() -> None:
         raise SystemExit(f"no store at {db} — run tools/collect_history.py first")
 
     conn = sqlite3.connect(db)
+    ensure_current_schema(conn, db)
 
     commits = q1(conn, "SELECT COUNT(*) FROM commits")
     outcomes = q1(conn, "SELECT COUNT(*) FROM test_outcomes")
@@ -113,10 +119,16 @@ def main() -> None:
             print(f"  {sha[:8]}  {test_file}  {case_id}")
 
     print()
-    print("=== cases that never pass (excluded from ground truth) ===")
+    print(
+        f"=== cases excluded from ground truth "
+        f"(>= {PERMANENT_FAILURE_MIN_OBSERVATIONS} commits observed, never passed) ==="
+    )
     for test_file, case_id, n in conn.execute(
-        "SELECT test_file, case_id, COUNT(*) FROM test_outcomes "
-        "GROUP BY test_file, case_id HAVING MAX(passed) = 0 ORDER BY COUNT(*) DESC LIMIT 20"
+        "SELECT test_file, case_id, COUNT(DISTINCT commit_sha) FROM test_outcomes "
+        "GROUP BY test_file, case_id "
+        "HAVING COUNT(DISTINCT commit_sha) >= ? AND MAX(passed) = 0 "
+        "ORDER BY COUNT(DISTINCT commit_sha) DESC LIMIT 20",
+        (PERMANENT_FAILURE_MIN_OBSERVATIONS,),
     ):
         print(f"  {test_file}  {case_id}  observations={n}")
 
